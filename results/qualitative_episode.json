@@ -1,0 +1,78 @@
+{
+  "instr_id": "1070_1",
+  "q_hat": 0.9886935967679575,
+  "steps": [
+    {
+      "step": 0,
+      "n_valid": 4,
+      "p_max": 1.0,
+      "set_size": 1,
+      "teacher_in": true,
+      "argmax_err": false,
+      "scan": "2azQ1b91cZZ"
+    },
+    {
+      "step": 1,
+      "n_valid": 4,
+      "p_max": 0.9999779462814331,
+      "set_size": 1,
+      "teacher_in": true,
+      "argmax_err": false,
+      "scan": "2azQ1b91cZZ"
+    },
+    {
+      "step": 2,
+      "n_valid": 10,
+      "p_max": 0.22566315531730652,
+      "set_size": 10,
+      "teacher_in": true,
+      "argmax_err": true,
+      "scan": "2azQ1b91cZZ"
+    },
+    {
+      "step": 3,
+      "n_valid": 13,
+      "p_max": 0.20208071172237396,
+      "set_size": 13,
+      "teacher_in": true,
+      "argmax_err": true,
+      "scan": "2azQ1b91cZZ"
+    },
+    {
+      "step": 4,
+      "n_valid": 12,
+      "p_max": 0.21820534765720367,
+      "set_size": 12,
+      "teacher_in": true,
+      "argmax_err": true,
+      "scan": "2azQ1b91cZZ"
+    },
+    {
+      "step": 5,
+      "n_valid": 12,
+      "p_max": 0.3144373297691345,
+      "set_size": 12,
+      "teacher_in": true,
+      "argmax_err": false,
+      "scan": "2azQ1b91cZZ"
+    },
+    {
+      "step": 6,
+      "n_valid": 14,
+      "p_max": 0.4735998511314392,
+      "set_size": 14,
+      "teacher_in": true,
+      "argmax_err": true,
+      "scan": "2azQ1b91cZZ"
+    },
+    {
+      "step": 7,
+      "n_valid": 14,
+      "p_max": 0.7294182777404785,
+      "set_size": 14,
+      "teacher_in": true,
+      "argmax_err": true,
+      "scan": "2azQ1b91cZZ"
+    }
+  ]
+}

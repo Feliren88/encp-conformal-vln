@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+dumps/*.pt
+logs/*.log
+paper/main.pdf
+paper/main.aux
+paper/main.bbl
+paper/main.blg
+paper/main.log

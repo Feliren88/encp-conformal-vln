@@ -1,0 +1,123 @@
+{
+  "score": "THR",
+  "alpha": 0.1,
+  "q_hat": {
+    "duet_full": 0.9886935967679575,
+    "duet_local": 0.9809474346216651,
+    "hamt": 0.9894556701687623,
+    "recbert_oscar": 0.999807200486701,
+    "recbert_prevalent": 0.9998664383782079
+  },
+  "matrix": {
+    "duet_full": {
+      "duet_full": {
+        "cov_step": 0.967899039610406,
+        "mean_set": 6.8341827663861565
+      },
+      "duet_local": {
+        "cov_step": 0.984936683627616,
+        "mean_set": 4.687347873812819
+      },
+      "hamt": {
+        "cov_step": 0.9503926185918523,
+        "mean_set": 3.9331605403707193
+      },
+      "recbert_oscar": {
+        "cov_step": 0.9013223791959424,
+        "mean_set": 3.669538834951456
+      },
+      "recbert_prevalent": {
+        "cov_step": 0.9148218379699862,
+        "mean_set": 3.797238634993368
+      }
+    },
+    "duet_local": {
+      "duet_full": {
+        "cov_step": 0.9582003493880888,
+        "mean_set": 6.56720398245822
+      },
+      "duet_local": {
+        "cov_step": 0.9793360074011416,
+        "mean_set": 4.588603064000382
+      },
+      "hamt": {
+        "cov_step": 0.941640597707009,
+        "mean_set": 3.803330191643104
+      },
+      "recbert_oscar": {
+        "cov_step": 0.8868958580325119,
+        "mean_set": 3.534344660194175
+      },
+      "recbert_prevalent": {
+        "cov_step": 0.902327056605473,
+        "mean_set": 3.6683950319546605
+      }
+    },
+    "hamt": {
+      "duet_full": {
+        "cov_step": 0.9697932832032449,
+        "mean_set": 6.867251392675121
+      },
+      "duet_local": {
+        "cov_step": 0.9855488995655024,
+        "mean_set": 4.700758841216055
+      },
+      "hamt": {
+        "cov_step": 0.9521628541743483,
+        "mean_set": 3.9486333647502354
+      },
+      "recbert_oscar": {
+        "cov_step": 0.9032230529037681,
+        "mean_set": 3.6874393203883495
+      },
+      "recbert_prevalent": {
+        "cov_step": 0.9159803856802579,
+        "mean_set": 3.8150247196430724
+      }
+    },
+    "recbert_oscar": {
+      "duet_full": {
+        "cov_step": 0.9977793763872946,
+        "mean_set": 7.976354154320256
+      },
+      "duet_local": {
+        "cov_step": 0.9994040017028523,
+        "mean_set": 5.0209039278384955
+      },
+      "hamt": {
+        "cov_step": 0.9867518992997921,
+        "mean_set": 4.6776625824693685
+      },
+      "recbert_oscar": {
+        "cov_step": 0.9696909022579521,
+        "mean_set": 4.487075242718447
+      },
+      "recbert_prevalent": {
+        "cov_step": 0.9702333024810675,
+        "mean_set": 4.509104063668154
+      }
+    },
+    "recbert_prevalent": {
+      "duet_full": {
+        "cov_step": 0.9980920727727879,
+        "mean_set": 8.022579115799454
+      },
+      "duet_local": {
+        "cov_step": 0.9996026678019015,
+        "mean_set": 5.027394645158211
+      },
+      "hamt": {
+        "cov_step": 0.9887240520701568,
+        "mean_set": 4.736255105246623
+      },
+      "recbert_oscar": {
+        "cov_step": 0.9735371647887613,
+        "mean_set": 4.552305825242718
+      },
+      "recbert_prevalent": {
+        "cov_step": 0.9733203507149869,
+        "mean_set": 4.55902568431207
+      }
+    }
+  }
+}
