@@ -159,6 +159,39 @@ def run_tests() -> int:
         < 1e-9,
     )
 
+    from cp_core.analyses import dense_sweep, DENSE_ALPHAS
+
+    dense = dense_sweep(split, split, alphas=(0.10, 0.50))
+    check(
+        "dense_sweep: base/zeroshot unchanged keys present",
+        "base" in dense and "zeroshot" in dense,
+    )
+    check(
+        "dense_sweep: new family block has pf and mlp",
+        set(dense["family"]["0.10"]["THR"]) == {"pf", "mlp"},
+    )
+    check(
+        "dense_sweep: zeroshot equals family pf",
+        abs(
+            dense["zeroshot"]["0.10"]["THR"]["cov_step"]
+            - dense["family"]["0.10"]["THR"]["pf"]["cov_step"]
+        )
+        < 1e-9,
+    )
+
+    dense_obj = dense_sweep(
+        split, split, alphas=(0.10,), cal_obj=obj, test_obj=obj
+    )
+    check(
+        "dense_sweep: object block present when cal_obj/test_obj given",
+        "object" in dense_obj
+        and set(dense_obj["object"]["0.10"]["THR"]["family"]) == {"pf", "mlp"},
+    )
+    check(
+        "dense_sweep: no object block when cal_obj/test_obj omitted",
+        "object" not in dense,
+    )
+
     print(f"\n[test] {'ALL PASS' if fails == 0 else f'{fails} FAILURES'}")
     return fails
 

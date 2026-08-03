@@ -220,6 +220,8 @@ def cmd_dense(a: argparse.Namespace) -> None:
             **cp.dense_sweep(
                 cp.Split.from_records(d["cal"]),
                 cp.Split.from_records(d["test"]),
+                cal_obj=d.get("cal_obj"),
+                test_obj=d.get("test_obj"),
             ),
         }
         results.append(r)

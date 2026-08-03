@@ -315,16 +315,35 @@ DENSE_ALPHAS = tuple(round(0.05 * k, 2) for k in range(1, 11))  # 0.05 .. 0.50
 
 
 def dense_sweep(
-    cal: Split, test: Split, alphas=DENSE_ALPHAS
+    cal: Split,
+    test: Split,
+    alphas=DENSE_ALPHAS,
+    cal_obj: Optional[Dict[str, Any]] = None,
+    test_obj: Optional[Dict[str, Any]] = None,
+    seed: int = 0,
 ) -> Dict[str, Any]:
-    """Base CP vs the parameter-free score (full calibration set) over a dense
-    alpha grid. Matches output_v9's cp_dense.json schema {base, zeroshot}."""
-    out: Dict[str, Any] = {"base": {}, "zeroshot": {}}
+    """Base CP vs the weight family over a dense alpha grid.
+
+    `base`/`zeroshot` keep output_v9's original schema (full-cal pf) for
+    backward compatibility. `family` adds the learned member (`mlp`,
+    split-matched on calibration half 2) alongside `pf` so the score x
+    weight-method comparison used by fig_reverie is available densely, for
+    every dump (R2R and REVERIE alike -- no dataset-specific branching).
+    When `cal_obj`/`test_obj` are given (REVERIE dumps), `object` adds the
+    same base/{pf,mlp} comparison for the grounding head, reusing
+    `_object_split` so the learned member is fit with the identical
+    half-1/half-2 bookkeeping as the navigation head.
+    """
+    _, h2 = cal.halves()
+    out: Dict[str, Any] = {"base": {}, "zeroshot": {}, "family": {}}
     for alpha in alphas:
         a = f"{alpha:.2f}"
-        out["base"][a], out["zeroshot"][a] = {}, {}
-        w_cal = WEIGHT_FAMILY["pf"](cal, alpha, {})
-        w_test = WEIGHT_FAMILY["pf"](test, alpha, {})
+        out["base"][a], out["zeroshot"][a], out["family"][a] = {}, {}, {}
+        models = fit_weight_models(cal, alpha, seed=seed)
+        w_cal_pf = WEIGHT_FAMILY["pf"](cal, alpha, {})
+        w_test_pf = WEIGHT_FAMILY["pf"](test, alpha, {})
+        w_cal_mlp = WEIGHT_FAMILY["mlp"](cal, alpha, models)
+        w_test_mlp = WEIGHT_FAMILY["mlp"](test, alpha, models)
         for score in SCORES:
             out["base"][a][score] = evaluate(
                 test,
@@ -333,8 +352,65 @@ def dense_sweep(
                 score,
             )
             out["zeroshot"][a][score] = evaluate(
-                test, epmax_quantile(cal, w_cal, score, alpha), w_test, score
+                test,
+                epmax_quantile(cal, w_cal_pf, score, alpha),
+                w_test_pf,
+                score,
             )
+            out["family"][a][score] = {
+                "pf": out["zeroshot"][a][score],
+                "mlp": evaluate(
+                    test,
+                    epmax_quantile(cal, w_cal_mlp, score, alpha, h2),
+                    w_test_mlp,
+                    score,
+                ),
+            }
+
+    if cal_obj and test_obj:
+        obj_cal = _object_split(cal_obj)
+        obj_test = _object_split(test_obj)
+        _, obj_h2 = obj_cal.halves()
+        out["object"] = {}
+        for alpha in alphas:
+            a = f"{alpha:.2f}"
+            obj_models = fit_weight_models(obj_cal, alpha, seed=seed)
+            ow_cal_pf = WEIGHT_FAMILY["pf"](obj_cal, alpha, {})
+            ow_test_pf = WEIGHT_FAMILY["pf"](obj_test, alpha, {})
+            ow_cal_mlp = WEIGHT_FAMILY["mlp"](obj_cal, alpha, obj_models)
+            ow_test_mlp = WEIGHT_FAMILY["mlp"](obj_test, alpha, obj_models)
+            out["object"][a] = {}
+            for score in SCORES:
+                base = _obj_metrics(
+                    evaluate(
+                        obj_test,
+                        pooled_quantile(obj_cal, score, alpha),
+                        np.zeros(len(obj_test)),
+                        score,
+                    )
+                )
+                pf = _obj_metrics(
+                    evaluate(
+                        obj_test,
+                        epmax_quantile(obj_cal, ow_cal_pf, score, alpha),
+                        ow_test_pf,
+                        score,
+                    )
+                )
+                mlp = _obj_metrics(
+                    evaluate(
+                        obj_test,
+                        epmax_quantile(
+                            obj_cal, ow_cal_mlp, score, alpha, obj_h2
+                        ),
+                        ow_test_mlp,
+                        score,
+                    )
+                )
+                out["object"][a][score] = {
+                    "base": base,
+                    "family": {"pf": pf, "mlp": mlp},
+                }
     return out
 
 
