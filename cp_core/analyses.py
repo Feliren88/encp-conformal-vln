@@ -277,7 +277,7 @@ def evaluate_indist(
 
 # ---- dense alpha sweep (the paper's "135 cells" claim)
 # ------------------------
-DENSE_ALPHAS = tuple(round(0.05 * k, 2) for k in range(1, 10))  # 0.05 .. 0.45
+DENSE_ALPHAS = tuple(round(0.05 * k, 2) for k in range(1, 11))  # 0.05 .. 0.50
 
 
 def dense_sweep(

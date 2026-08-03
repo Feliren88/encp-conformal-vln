@@ -80,6 +80,12 @@ def run_tests() -> int:
     split = Split.from_records(synthetic_records())
     check("Split shape", split.n_episodes == 40 and len(split) == 200)
 
+    from cp_core.analyses import DENSE_ALPHAS
+    check(
+        "dense alpha grid spans 0.05..0.50 in 10 steps",
+        DENSE_ALPHAS == tuple(round(0.05 * k, 2) for k in range(1, 11)),
+    )
+
     w_pf = WEIGHT_FAMILY["pf"](split, 0.10, {})
     check("pf weight in [0,1]", bool((w_pf >= 0).all() and (w_pf <= 1).all()))
     q = epmax_quantile(split, w_pf, "THR", 0.10)
