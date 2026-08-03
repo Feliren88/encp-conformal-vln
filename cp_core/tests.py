@@ -135,6 +135,29 @@ def run_tests() -> int:
     }
     o = evaluate_object_head(obj, obj, alphas=(0.10,))
     check("object head runs", "0.10" in o and o["teacher_present_rate"] == 1.0)
+    check(
+        "object head: base/norm carry the historical keys plus the richer set",
+        {"q", "cov", "mean_set", "median_set", "singleton", "set_degree_ratio"}
+        <= set(o["0.10"]["THR"]["base"])
+        and {"q", "cov", "mean_set", "median_set", "singleton"}
+        <= set(o["0.10"]["THR"]["norm"]),
+    )
+    check(
+        "object head: family has every weight member",
+        set(o["0.10"]["THR"]["family"]) == set(WEIGHTS),
+    )
+    check(
+        "object head: family_full is parameter-free only",
+        set(o["0.10"]["THR"]["family_full"]) == set(PARAMETER_FREE),
+    )
+    check(
+        "object head: norm equals family_full pf (both full-cal pf)",
+        abs(
+            o["0.10"]["THR"]["norm"]["cov"]
+            - o["0.10"]["THR"]["family_full"]["pf"]["cov"]
+        )
+        < 1e-9,
+    )
 
     print(f"\n[test] {'ALL PASS' if fails == 0 else f'{fails} FAILURES'}")
     return fails

@@ -123,49 +123,63 @@ def dtv_sensitivity(
 
 
 # ---- object-grounding head (REVERIE): one classification per episode --------
-def _object_step(rec: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    ti = int(rec["teacher_idx"])
-    lg = rec["obj_logits"]
-    lg = (
-        lg.float().numpy()
-        if isinstance(lg, torch.Tensor)
-        else np.asarray(lg, float)
-    )
-    if ti < 0 or lg.size == 0 or ti >= lg.size:
-        return None
-    e = np.exp(lg - lg.max())
-    p = np.clip(e / e.sum(), EPS, 1.0)
-    scores = base_scores_all(p)
-    return {
-        "scores": scores,
-        "teacher": {k: float(scores[k][ti]) for k in SCORES},
-        "p_max": float(p.max()),
-    }
+def _object_split(obj: Dict[str, Any]) -> Split:
+    """One episode per object-grounding decision, reusing the `Split`
+    abstraction: each episode has exactly one "step" (the terminal object
+    classification). This makes the episode-max quantile, the weight
+    family, and the half-1/half-2 learned-member bookkeeping identical to
+    the navigation head -- no parallel implementation needed.
+
+    Episodes without a valid teacher (`teacher_idx` negative, or out of
+    range of the candidate logits) are dropped, matching the historical
+    `_object_step` filter: `Split.from_records` otherwise scores a missing
+    teacher via `teacher_fallback` (worst-case, 1.0 for THR) which is the
+    right conservative choice for a per-step slot inside a multi-step nav
+    episode, but wrong here -- REVERIE episodes commonly have no
+    object-grounding teacher at all (`teacher_present_rate` < 1), and
+    letting those saturate every score at 1.0 collapses the object-head
+    thresholds to trivial full coverage."""
+    records = {}
+    for eid, rec in obj.items():
+        ti = int(rec["teacher_idx"])
+        lg = rec["obj_logits"]
+        lg_arr = (
+            lg.float().numpy()
+            if isinstance(lg, torch.Tensor)
+            else np.asarray(lg, float)
+        )
+        if ti < 0 or lg_arr.size == 0 or ti >= lg_arr.size:
+            continue
+        records[eid] = [
+            {"logits": rec["obj_logits"], "teacher_idx": ti, "step": 0}
+        ]
+    return Split.from_records(records)
+
+
+def _obj_metrics(e: Dict[str, float]) -> Dict[str, float]:
+    """Pass through the full richer evaluate() dict (Task 1B: median/
+    percentiles/set_degree_ratio/SE/weight stats) unchanged, adding one
+    historical alias: `cov` = `cov_step` (with one step per episode,
+    cov_step and cov_simul are identical; `cov` is the object head's
+    long-standing key name and existing consumers read it)."""
+    return {**e, "cov": e["cov_step"]}
 
 
 def evaluate_object_head(
-    cal_obj: Dict[str, Any], test_obj: Dict[str, Any], alphas=ALPHAS
+    cal_obj: Dict[str, Any],
+    test_obj: Dict[str, Any],
+    alphas=ALPHAS,
+    seed: int = 0,
 ) -> Dict[str, Any]:
-    """Plain split CP on the single-shot grounding classifier (episodes are
-    exchangeable, no episode-max): base vs the parameter-free normalisation."""
-    cal = [f for f in map(_object_step, cal_obj.values()) if f]
-    test = [f for f in map(_object_step, test_obj.values()) if f]
-
-    def metrics(q: float, score: str, normalised: bool) -> Dict[str, float]:
-        cov, sizes = [], []
-        for f in test:
-            thr = q * (2.0 - f["p_max"]) if normalised else q
-            sizes.append(max(int(np.sum(f["scores"][score] <= thr)), 1))
-            cov.append(bool(f["teacher"][score] <= thr))
-        if not test:
-            return {"q": q, "cov": 0.0, "mean_set": 0.0, "singleton": 0.0}
-        return {
-            "q": float(q),
-            "cov": float(np.mean(cov)),
-            "mean_set": float(np.mean(sizes)),
-            "singleton": float(np.mean(np.asarray(sizes) == 1)),
-        }
-
+    """Split CP on the single-shot grounding classifier, reusing the same
+    `Split`-based weight-family machinery as `evaluate_condition`: base
+    (no normalisation), the full weight family split-matched on
+    calibration half 2 (`family`), and the parameter-free members on the
+    full calibration set (`family_full`). `base` and `norm` keep their
+    historical full-cal values so existing consumers are unaffected;
+    `norm` is numerically identical to `family_full["pf"]`."""
+    cal = _object_split(cal_obj)
+    test = _object_split(test_obj)
     out: Dict[str, Any] = {
         "n_cal": len(cal_obj),
         "n_test": len(test_obj),
@@ -174,30 +188,50 @@ def evaluate_object_head(
             / max(len(test_obj), 1)
         ),
     }
+    _, h2 = cal.halves()
     for alpha in alphas:
-        out[f"{alpha:.2f}"] = {
-            score: {
-                "base": metrics(
-                    conformal_quantile(
-                        [f["teacher"][score] for f in cal], alpha
-                    ),
+        models = fit_weight_models(cal, alpha, seed=seed)
+        w_cal = {v: WEIGHT_FAMILY[v](cal, alpha, models) for v in WEIGHTS}
+        w_test = {v: WEIGHT_FAMILY[v](test, alpha, models) for v in WEIGHTS}
+        block: Dict[str, Any] = {}
+        for score in SCORES:
+            base = _obj_metrics(
+                evaluate(
+                    test,
+                    pooled_quantile(cal, score, alpha),
+                    np.zeros(len(test)),
                     score,
-                    False,
-                ),
-                "norm": metrics(
-                    conformal_quantile(
-                        [
-                            f["teacher"][score] / (2.0 - f["p_max"])
-                            for f in cal
-                        ],
-                        alpha,
-                    ),
-                    score,
-                    True,
-                ),
+                )
+            )
+            family = {
+                v: _obj_metrics(
+                    evaluate(
+                        test,
+                        epmax_quantile(cal, w_cal[v], score, alpha, h2),
+                        w_test[v],
+                        score,
+                    )
+                )
+                for v in WEIGHTS
             }
-            for score in SCORES
-        }
+            family_full = {
+                v: _obj_metrics(
+                    evaluate(
+                        test,
+                        epmax_quantile(cal, w_cal[v], score, alpha),
+                        w_test[v],
+                        score,
+                    )
+                )
+                for v in PARAMETER_FREE
+            }
+            block[score] = {
+                "base": base,
+                "norm": family_full["pf"],
+                "family": family,
+                "family_full": family_full,
+            }
+        out[f"{alpha:.2f}"] = block
     return out
 
 
