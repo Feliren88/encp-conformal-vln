@@ -94,6 +94,18 @@ def run_tests() -> int:
         evaluate(split, q, w_pf, "THR")["cov_step"] >= 0.90,
     )
 
+    m = evaluate(split, q, w_pf, "THR")
+    check(
+        "evaluate(): richer stats present and consistent",
+        m["median_set"] > 0
+        and m["set_max"] >= m["median_set"] >= m["set_min"] > 0
+        and m["n_steps"] == len(split)
+        and m["n_episodes"] == split.n_episodes
+        and 0.0 <= m["set_degree_ratio"] <= 1.0 + 1e-9
+        and m["cov_step_se"] >= 0.0
+        and m["weight_mean"] == float(np.mean(w_pf)),
+    )
+
     models = fit_weight_models(split, 0.10, seed=0)
     for v in ("mlp", "hybrid", "random"):
         check(

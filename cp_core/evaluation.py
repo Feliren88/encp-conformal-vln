@@ -40,19 +40,49 @@ def _set_sizes(split: Split, thr: np.ndarray, score: str) -> np.ndarray:
 def evaluate(
     split: Split, q: float, w: np.ndarray, score: str
 ) -> Dict[str, float]:
-    """Coverage / efficiency with per-step effective threshold q * (1 + w)."""
+    """Coverage / efficiency with per-step effective threshold q * (1 + w).
+
+    Beyond the headline cov/mean_set/singleton/saturation, reports the
+    full set-size distribution (median, std, percentiles, min/max), a
+    backbone-comparable normalised inefficiency (set_degree_ratio),
+    standard errors of both coverage estimates, sample sizes, and the
+    deployed per-step weight's own distribution -- everything needed to
+    interpret a result cell without re-deriving it from the dump."""
     thr = q * (1.0 + w)
     covered = split.base_teacher[score] <= thr
     sizes = _set_sizes(split, thr, score)
-    ep_rate = [covered[a:b].mean() for a, b in split.ep_ptr]
-    ep_simul = [bool(covered[a:b].all()) for a, b in split.ep_ptr]
+    ep_rate = np.asarray([covered[a:b].mean() for a, b in split.ep_ptr])
+    ep_simul = np.asarray(
+        [bool(covered[a:b].all()) for a, b in split.ep_ptr], dtype=float
+    )
+
+    def se(x: np.ndarray) -> float:
+        return float(x.std(ddof=1) / np.sqrt(len(x))) if len(x) > 1 else 0.0
+
     return {
         "q": float(q),
-        "cov_step": float(np.mean(ep_rate)),
-        "cov_simul": float(np.mean(ep_simul)),
+        "cov_step": float(ep_rate.mean()),
+        "cov_step_se": se(ep_rate),
+        "cov_simul": float(ep_simul.mean()),
+        "cov_simul_se": se(ep_simul),
         "mean_set": float(sizes.mean()),
+        "median_set": float(np.median(sizes)),
+        "set_std": float(sizes.std()),
+        "set_min": int(sizes.min()),
+        "set_max": int(sizes.max()),
+        "set_p10": float(np.percentile(sizes, 10)),
+        "set_p25": float(np.percentile(sizes, 25)),
+        "set_p75": float(np.percentile(sizes, 75)),
+        "set_p90": float(np.percentile(sizes, 90)),
+        "set_p95": float(np.percentile(sizes, 95)),
+        "set_degree_ratio": float(np.mean(sizes / split.degree)),
         "singleton": float(np.mean(sizes == 1)),
         "saturation": float(np.mean(sizes >= split.degree)),
+        "n_episodes": int(len(ep_rate)),
+        "n_steps": int(len(sizes)),
+        "weight_mean": float(np.mean(w)),
+        "weight_median": float(np.median(w)),
+        "weight_std": float(np.std(w)),
     }
 
 
