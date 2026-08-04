@@ -12,34 +12,12 @@ import os
 from typing import Any, Dict, List
 
 ROWS: List[Dict[str, str]] = [
-    {"cond": "duet_full", "label": "DUET", "dataset": "R2R", "third": "sgl"},
-    {"cond": "hamt", "label": "HAMT", "dataset": "R2R", "third": "sgl"},
-    {
-        "cond": "recbert_prevalent",
-        "label": "R-prev",
-        "dataset": "R2R",
-        "third": "sgl",
-    },
-    {
-        "cond": "recbert_oscar",
-        "label": "R-osc",
-        "dataset": "R2R",
-        "third": "sgl",
-    },
-    {
-        "cond": "duet_full_reverie",
-        "label": "DUET",
-        "dataset": "REVERIE",
-        "third": "sat",
-    },
-    {
-        "cond": "hamt_reverie",
-        "label": "HAMT",
-        "dataset": "REVERIE",
-        "third": "sat",
-    },
+    {"cond": "duet_full", "label": "DUET"},
+    {"cond": "hamt", "label": "HAMT"},
+    {"cond": "recbert_prevalent", "label": "R-prev"},
+    {"cond": "recbert_oscar", "label": "R-osc"},
 ]
-SCORES = ("THR", "RAPS")
+SCORES = ("THR", "APS", "RAPS")
 ALPHA_COLS = ("0.10", "0.30")
 
 
@@ -52,28 +30,23 @@ def _fmt(x: float) -> str:
     return f"{x:.3f}"
 
 
-_THIRD_FIELD = {"sgl": "singleton", "sat": "saturation"}
-
-
-def _row_cells(
-    by: Dict[str, Any], cond: str, score: str, third: str
-) -> List[str]:
-    field = _THIRD_FIELD[third]
+def _row_cells(by: Dict[str, Any], cond: str, score: str) -> List[str]:
     cells = []
     for a in ALPHA_COLS:
-        m = by[cond][a]["family"][score]["pf"]
-        cells += [_fmt(m["cov_step"]), f"{m['mean_set']:.1f}", _fmt(m[field])]
+        base = by[cond][a]["base"][score]
+        encp = by[cond][a]["family"][score]["pf"]
+        cells += [
+            _fmt(base["cov_step"]), f"{base['mean_set']:.1f}",
+            _fmt(base["singleton"]),
+            _fmt(encp["cov_step"]), f"{encp['mean_set']:.1f}",
+            _fmt(encp["singleton"]),
+        ]
     return cells
 
 
-def _delta_cov(by: Dict[str, Any], cond: str) -> str:
-    fam = by[cond]["0.10"]["family"]["THR"]
-    delta = fam["mlp"]["cov_step"] - fam["pf"]["cov_step"]
-    sign = "+" if delta >= 0 else ""
-    return f"{sign}{delta:.3f}"
-
-
 def make_tables(res_dir: str, tables_dir: str) -> None:
+    """R2R, complete: every base score (THR/APS/RAPS) against its ENCP
+    (formula-based weight) counterpart, all four R2R backbones."""
     os.makedirs(tables_dir, exist_ok=True)
     results = _load(res_dir, "cp_results.json")
     by = {r["condition"]: r for r in results}
@@ -82,60 +55,54 @@ def make_tables(res_dir: str, tables_dir: str) -> None:
     lines.append(r"\begin{table*}[t]")
     lines.append(r"\centering")
     lines.append(
-        r"\caption{ENCP (Episode-Normalized Conformal Prediction) on R2R "
-        r"and REVERIE val-unseen: coverage, mean set size, and "
-        r"singleton/saturation rate (sgl for R2R, sat for REVERIE) at "
-        r"$\alpha=0.10$ and $\alpha=0.30$ ($\alpha=0.20$ is transitional "
-        r"and omitted; APS matches THR to within the tolerance stated in "
-        r"Section~\ref{ssec:main} and is omitted). $\Delta$cov is the "
-        r"learned-minus-formula-based coverage gap (THR, $\alpha=0.10$).}"
+        r"\caption{R2R val-unseen, complete: every base score (THR/APS/"
+        r"RAPS) against its ENCP (Episode-Normalized Conformal "
+        r"Prediction, formula-based weight) counterpart, all four "
+        r"backbones, at $\alpha=0.10$ and $\alpha=0.30$. cov is step-"
+        r"averaged coverage, $\overline{|C|}$ the mean prediction-set "
+        r"size, sgl the singleton rate.}"
     )
     lines.append(r"\label{tab:encp}")
     lines.append(r"\setlength{\tabcolsep}{3pt}\scriptsize")
     lines.append(r"\renewcommand{\arraystretch}{0.92}")
-    lines.append(r"\begin{tabular}{ll ccc c ccc c c}")
+    lines.append(r"\begin{tabular}{ll ccc c ccc c ccc c ccc}")
     lines.append(r"\toprule")
     lines.append(
-        r"& & \multicolumn{3}{c}{$\alpha{=}0.10$} & & "
-        r"\multicolumn{3}{c}{$\alpha{=}0.30$} & & \\"
+        r"& & \multicolumn{6}{c}{$\alpha{=}0.10$} & & "
+        r"\multicolumn{6}{c}{$\alpha{=}0.30$} \\"
     )
-    lines.append(r"\cmidrule{3-5}\cmidrule{7-9}")
+    lines.append(r"\cmidrule{3-8}\cmidrule{10-15}")
     lines.append(
-        r"\textbf{Backb.} & \textbf{Sc.} & cov & $\overline{|C|}$ & "
-        r"sgl/sat & & cov & $\overline{|C|}$ & sgl/sat & & "
-        r"$\Delta$cov \\"
+        r"& & \multicolumn{3}{c}{base} & \multicolumn{3}{c}{ENCP} & & "
+        r"\multicolumn{3}{c}{base} & \multicolumn{3}{c}{ENCP} \\"
+    )
+    lines.append(r"\cmidrule{3-5}\cmidrule{6-8}\cmidrule{10-12}\cmidrule{13-15}")
+    lines.append(
+        r"\textbf{Backb.} & \textbf{Sc.} & cov & $\overline{|C|}$ & sgl & "
+        r"cov & $\overline{|C|}$ & sgl & & "
+        r"cov & $\overline{|C|}$ & sgl & cov & $\overline{|C|}$ & sgl \\"
     )
     lines.append(r"\midrule")
 
-    prev_dataset = None
     for i, row in enumerate(ROWS):
         cond = row["cond"]
         if cond not in by:
             continue
-        if (
-            prev_dataset is not None
-            and row["dataset"] != prev_dataset
-            and lines[-1] != r"\midrule"
-        ):
-            lines.append(r"\midrule")
-        prev_dataset = row["dataset"]
         for j, score in enumerate(SCORES):
-            cells = _row_cells(by, cond, score, row["third"])
+            cells = _row_cells(by, cond, score)
             prefix = (
                 f"\\multirow{{{len(SCORES)}}}{{*}}{{{row['label']}}}"
                 if j == 0
                 else ""
             )
-            delta = _delta_cov(by, cond) if j == 0 else ""
             lines.append(
                 f" {prefix} & {score} & {cells[0]} & {cells[1]} & "
-                f"{cells[2]} & & {cells[3]} & {cells[4]} & {cells[5]} & "
-                f"& {delta} \\\\"
+                f"{cells[2]} & {cells[3]} & {cells[4]} & {cells[5]} & & "
+                f"{cells[6]} & {cells[7]} & {cells[8]} & {cells[9]} & "
+                f"{cells[10]} & {cells[11]} \\\\"
             )
         if i < len(ROWS) - 1:
             lines.append(r"\midrule")
-    if lines[-1] == r"\midrule":
-        lines.pop()
     lines.append(r"\bottomrule")
     lines.append(r"\end{tabular}")
     lines.append(r"\end{table*}")
@@ -146,5 +113,102 @@ def make_tables(res_dir: str, tables_dir: str) -> None:
     print(f"[tables] tab_encp.tex ({len(ROWS)} backbones) -> {out_path}")
 
 
+REVERIE_ROWS: List[Dict[str, str]] = [
+    {"cond": "duet_full_reverie", "label": "DUET"},
+    {"cond": "hamt_reverie", "label": "HAMT"},
+]
+REVERIE_SCORES = ("THR", "APS", "RAPS")
+REVERIE_ALPHA_COLS = ("0.10", "0.30")
+
+
+def _reverie_full_cells(by: Dict[str, Any], cond: str, score: str) -> List[str]:
+    cells = []
+    for a in REVERIE_ALPHA_COLS:
+        base = by[cond][a]["base"][score]
+        encp = by[cond][a]["family"][score]["pf"]
+        cells += [
+            _fmt(base["cov_step"]), f"{base['mean_set']:.1f}",
+            _fmt(base["saturation"]),
+            _fmt(encp["cov_step"]), f"{encp['mean_set']:.1f}",
+            _fmt(encp["saturation"]),
+        ]
+    return cells
+
+
+def make_reverie_full_table(res_dir: str, tables_dir: str) -> None:
+    """Standalone REVERIE-only table: every base score (THR/APS/RAPS)
+    against its ENCP (formula-based) counterpart, both REVERIE backbones,
+    no compression -- not wired into the paper, a results reference only."""
+    os.makedirs(tables_dir, exist_ok=True)
+    results = _load(res_dir, "cp_results.json")
+    by = {r["condition"]: r for r in results}
+
+    lines: List[str] = []
+    lines.append(r"\begin{table*}[t]")
+    lines.append(r"\centering")
+    lines.append(
+        r"\caption{REVERIE val-unseen, complete: every base score (THR/"
+        r"APS/RAPS) against its ENCP (Episode-Normalized Conformal "
+        r"Prediction, formula-based weight) counterpart, both backbones, "
+        r"at $\alpha=0.10$ and $\alpha=0.30$. cov is step-averaged "
+        r"coverage, $\overline{|C|}$ the mean prediction-set size, sat the "
+        r"saturation rate (fraction of steps whose set spans the whole "
+        r"action space).}"
+    )
+    lines.append(r"\label{tab:reverie-full}")
+    lines.append(r"\setlength{\tabcolsep}{3pt}\scriptsize")
+    lines.append(r"\renewcommand{\arraystretch}{0.92}")
+    lines.append(r"\begin{tabular}{ll ccc c ccc c ccc c ccc}")
+    lines.append(r"\toprule")
+    lines.append(
+        r"& & \multicolumn{6}{c}{$\alpha{=}0.10$} & & "
+        r"\multicolumn{6}{c}{$\alpha{=}0.30$} \\"
+    )
+    lines.append(r"\cmidrule{3-8}\cmidrule{10-15}")
+    lines.append(
+        r"& & \multicolumn{3}{c}{base} & \multicolumn{3}{c}{ENCP} & & "
+        r"\multicolumn{3}{c}{base} & \multicolumn{3}{c}{ENCP} \\"
+    )
+    lines.append(r"\cmidrule{3-5}\cmidrule{6-8}\cmidrule{10-12}\cmidrule{13-15}")
+    lines.append(
+        r"\textbf{Backb.} & \textbf{Sc.} & cov & $\overline{|C|}$ & sat & "
+        r"cov & $\overline{|C|}$ & sat & & "
+        r"cov & $\overline{|C|}$ & sat & cov & $\overline{|C|}$ & sat \\"
+    )
+    lines.append(r"\midrule")
+
+    for i, row in enumerate(REVERIE_ROWS):
+        cond = row["cond"]
+        if cond not in by:
+            continue
+        for j, score in enumerate(REVERIE_SCORES):
+            cells = _reverie_full_cells(by, cond, score)
+            prefix = (
+                f"\\multirow{{{len(REVERIE_SCORES)}}}{{*}}{{{row['label']}}}"
+                if j == 0
+                else ""
+            )
+            lines.append(
+                f" {prefix} & {score} & {cells[0]} & {cells[1]} & "
+                f"{cells[2]} & {cells[3]} & {cells[4]} & {cells[5]} & & "
+                f"{cells[6]} & {cells[7]} & {cells[8]} & {cells[9]} & "
+                f"{cells[10]} & {cells[11]} \\\\"
+            )
+        if i < len(REVERIE_ROWS) - 1:
+            lines.append(r"\midrule")
+    lines.append(r"\bottomrule")
+    lines.append(r"\end{tabular}")
+    lines.append(r"\end{table*}")
+
+    out_path = os.path.join(tables_dir, "tab_reverie_full.tex")
+    with open(out_path, "w") as f:
+        f.write("\n".join(lines) + "\n")
+    print(
+        f"[tables] tab_reverie_full.tex ({len(REVERIE_ROWS)} backbones "
+        f"x {len(REVERIE_SCORES)} scores) -> {out_path}"
+    )
+
+
 def make_all(res_dir: str, tables_dir: str) -> None:
     make_tables(res_dir, tables_dir)
+    make_reverie_full_table(res_dir, tables_dir)
