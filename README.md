@@ -296,6 +296,7 @@ python conformal_vln.py test      # unit tests on synthetic data (seconds)
 python conformal_vln.py verify    # re-assert every paper claim vs results/  (21/21)
 python conformal_vln.py figures   # aggregate dashboard -> figures_html/figures.html
 python conformal_vln.py paperfigs # print-quality PNGs  -> paper/figures/
+python conformal_vln.py tables       # LaTeX tables -> paper/tables/
 ```
 
 ### Full pipeline (GPU)
@@ -357,6 +358,7 @@ supplies the teacher action whenever the trigger fires.
 | `closedloop` | GPU + simulator | `results/closedloop.json` |
 | `figures` | results | `figures_html/figures.html` |
 | `paperfigs` | results | `paper/figures/*.png` |
+| `tables` | results | `paper/tables/*.tex` |
 | `test` | nothing | unit-test report |
 | `verify` | results | pass/fail on every paper claim |
 

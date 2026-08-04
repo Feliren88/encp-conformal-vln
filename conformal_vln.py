@@ -485,6 +485,19 @@ def main() -> None:
             ),
         )
     )
+    tbl = sub.add_parser(
+        "tables", help="print LaTeX tables for paper/tables (from results)"
+    )
+    tbl.set_defaults(
+        fn=lambda a: __import__("paper_tables").make_all(
+            RES_DIR,
+            os.path.join(
+                os.path.dirname(os.path.abspath(__file__)),
+                "paper",
+                "tables",
+            ),
+        )
+    )
     ver = sub.add_parser(
         "verify", help="assert paper claims vs cp_results.json"
     )
