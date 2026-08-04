@@ -90,6 +90,42 @@ def verify_results(results_path: str) -> int:
                 f"cov={cov:.3f}",
             )
 
+    for c in reverie:
+        oh = by[c].get("object_cp")
+        if not oh:
+            continue
+        for a in ("0.10", "0.20", "0.30"):
+            f = oh[a]["THR"]["family"]
+            gap = abs(f["mlp"]["cov"] - f["pf"]["cov"])
+            # Object-head calibration sets are far smaller than the
+            # navigation head's (hundreds vs thousands of episodes), so a
+            # single-step quantile is noisier; 0.05 mirrors the nav
+            # head's 0.02 tolerance scaled by that sample-size gap.
+            ok(
+                f"object-head learned~pf gap<=0.05 [{c}@{a}]",
+                gap <= 0.05,
+                f"gap={gap:.4f}",
+            )
+
+    dense_path = os.path.join(os.path.dirname(results_path), "cp_dense.json")
+    if os.path.exists(dense_path):
+        with open(dense_path) as f:
+            dense_by = {r["condition"]: r for r in json.load(f)}
+        cells = [
+            (c, dense_by[c]["zeroshot"]["0.50"][s]["cov_step"])
+            for c in dense_by
+            if "0.50" in dense_by[c].get("zeroshot", {})
+            for s in SCORES
+        ]
+        if cells:
+            below = [(c, cov) for c, cov in cells if cov < 0.50]
+            ok(
+                f"dense grid clears target at alpha=0.50 in all "
+                f"{len(cells)} cells",
+                not below,
+                f"{len(cells) - len(below)}/{len(cells)}",
+            )
+
     width = max(len(n) for _, n, _ in checks)
     fails = [n for passed, n, _ in checks if not passed]
     for passed, name, detail in checks:
