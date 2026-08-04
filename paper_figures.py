@@ -203,41 +203,18 @@ def fig_qualitative(res_dir: str, out: str) -> None:
 
 
 def fig_reverie(res_dir: str, out: str) -> None:
-    """REVERIE over the dense alpha grid: the navigation head keeps the
-    guarantee under shift (left); the grounding head loses it to the shift
-    and in-distribution recalibration restores it (right).
-
-    Navigation curves come from cp_dense.json; the object-head curves are
-    recomputed densely from the dumps (CPU, seconds)."""
-    import numpy as np
-    import cp_core as cp
-    import torch
-
-    dense = {r["condition"]: r for r in _load(res_dir, "cp_dense.json")}
-    alphas = sorted(float(a) for a in dense["duet_full_reverie"]["zeroshot"])
+    """REVERIE, DUET only, dense alpha grid: coverage for every base score
+    (THR/APS/RAPS) under the formula-based (pf, solid) and learned (mlp,
+    dashed) weight, navigation head (left) and grounding head (right)."""
+    dense = _load(res_dir, "cp_dense.json")
+    cond = next(r for r in dense if r["condition"] == "duet_full_reverie")
+    alphas = sorted(float(a) for a in cond["family"])
     keys = [f"{a:.2f}" for a in alphas]
-    conds = ("duet_full_reverie", "hamt_reverie")
 
-    obj_shift, obj_indist = {}, {}
-    dump_dir = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "dumps"
-    )
-    for cond in conds:
-        d = torch.load(os.path.join(dump_dir, f"{cond}.pt"), weights_only=True)
-        o = cp.evaluate_object_head(d["cal_obj"], d["test_obj"], alphas=alphas)
-        obj_shift[cond] = [o[a]["THR"]["norm"]["cov"] for a in keys]
-        runs = []
-        for seed in range(5):
-            r = cp.evaluate_indist(
-                os.path.join(dump_dir, f"{cond}.pt"), seed=seed, alphas=alphas
-            )
-            runs.append([r["object"][a]["THR"]["norm"]["cov"] for a in keys])
-        obj_indist[cond] = np.mean(runs, axis=0)
+    score_color = {"THR": BLUE, "APS": AQUA, "RAPS": RED}
+    weight_style = {"pf": "-", "mlp": "--"}
 
-    def nav(cond: str) -> List[float]:
-        return [dense[cond]["zeroshot"][a]["THR"]["cov_step"] for a in keys]
-
-    fig, (axA, axB) = plt.subplots(1, 2, figsize=(2.45, 1.45), sharey=True)
+    fig, (axA, axB) = plt.subplots(1, 2, figsize=(3.6, 1.7), sharey=True)
     for ax in (axA, axB):
         ax.plot(
             alphas,
@@ -247,104 +224,64 @@ def fig_reverie(res_dir: str, out: str) -> None:
             ls=(0, (4, 3)),
             zorder=2,
         )
-        ax.set_xticks([0.1, 0.2, 0.3, 0.4])
+        ax.set_xticks([0.1, 0.2, 0.3, 0.4, 0.5])
         ax.set_xlabel(r"$\alpha$")
         _despine(ax)
     axA.annotate(
-        r"target $1{-}\alpha$",
-        xy=(0.30, 0.66),
+        r"Target $1{-}\alpha$",
+        xy=(0.35, 0.60),
         fontsize=6.0,
         color=MUTED,
-        rotation=-33,
+        rotation=-30,
         ha="center",
         va="top",
     )
-    axA.plot(
-        alphas,
-        nav("duet_full_reverie"),
-        color=BLUE,
-        marker="o",
-        ms=2.6,
-        lw=1.2,
-    )
-    axA.plot(
-        alphas, nav("hamt_reverie"), color=AQUA, marker="s", ms=2.4, lw=1.2
-    )
-    axA.annotate(
-        "DUET",
-        xy=(alphas[-1], nav("duet_full_reverie")[-1]),
-        textcoords="offset points",
-        xytext=(-20, -10),
-        color=BLUE,
-        fontsize=6.6,
-    )
-    axA.annotate(
-        "HAMT",
-        xy=(alphas[-1], nav("hamt_reverie")[-1]),
-        textcoords="offset points",
-        xytext=(-20, 5),
-        color=AQUA,
-        fontsize=6.6,
-    )
-    axA.set_title("navigation head", fontsize=7.2)
-    axA.set_ylabel("coverage")
-    axB.plot(
-        alphas,
-        obj_shift["duet_full_reverie"],
-        color=BLUE,
-        marker="o",
-        ms=2.6,
-        lw=1.2,
-    )
-    axB.plot(
-        alphas,
-        obj_shift["hamt_reverie"],
-        color=AQUA,
-        marker="s",
-        ms=2.4,
-        lw=1.2,
-    )
-    axB.plot(
-        alphas,
-        obj_indist["duet_full_reverie"],
-        color=BLUE,
-        marker="o",
-        ms=2.6,
-        lw=1.0,
-        ls=":",
-    )
-    axB.plot(
-        alphas,
-        obj_indist["hamt_reverie"],
-        color=AQUA,
-        marker="s",
-        ms=2.4,
-        lw=1.0,
-        ls=":",
-    )
-    axB.set_title("grounding head", fontsize=7.2)
-    # linestyle carries the condition, hue carries the agent -- legend uses
-    # neutral proxies so it does not read as DUET-only
+
+    for score in ("THR", "APS", "RAPS"):
+        for weight in ("pf", "mlp"):
+            axA.plot(
+                alphas,
+                [cond["family"][a][score][weight]["cov_step"] for a in keys],
+                color=score_color[score],
+                ls=weight_style[weight],
+                lw=1.1,
+                marker="o" if weight == "pf" else None,
+                ms=2.0,
+            )
+            axB.plot(
+                alphas,
+                [
+                    cond["object"][a][score]["family"][weight]["cov"]
+                    for a in keys
+                ],
+                color=score_color[score],
+                ls=weight_style[weight],
+                lw=1.1,
+                marker="o" if weight == "pf" else None,
+                ms=2.0,
+            )
+    axA.set_title("Navigation head", fontsize=7.2)
+    axA.set_ylabel("Coverage")
+    axB.set_title("Grounding head", fontsize=7.2)
+
     from matplotlib.lines import Line2D
 
+    score_handles = [
+        Line2D([], [], color=score_color[s], lw=1.3, label=s)
+        for s in ("THR", "APS", "RAPS")
+    ]
+    style_handles = [
+        Line2D([], [], color=MUTED, lw=1.1, ls="-", label="formula-based"),
+        Line2D([], [], color=MUTED, lw=1.1, ls="--", label="learned"),
+    ]
     fig.legend(
-        handles=[
-            Line2D([], [], color=MUTED, lw=1.3, label="seen$\\to$unseen"),
-            Line2D(
-                [],
-                [],
-                color=MUTED,
-                lw=1.1,
-                ls=":",
-                label="recalibrated in-dist.",
-            ),
-        ],
+        handles=score_handles + style_handles,
         loc="lower center",
         bbox_to_anchor=(0.55, 0.865),
-        ncol=2,
+        ncol=5,
         handlelength=1.5,
         borderaxespad=0.0,
-        columnspacing=1.0,
+        columnspacing=0.9,
         frameon=False,
     )
     axA.set_ylim(0.3, 1.02)
