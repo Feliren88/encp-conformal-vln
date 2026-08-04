@@ -112,7 +112,11 @@ def make_tables(res_dir: str, tables_dir: str) -> None:
         cond = row["cond"]
         if cond not in by:
             continue
-        if prev_dataset is not None and row["dataset"] != prev_dataset:
+        if (
+            prev_dataset is not None
+            and row["dataset"] != prev_dataset
+            and lines[-1] != r"\midrule"
+        ):
             lines.append(r"\midrule")
         prev_dataset = row["dataset"]
         for j, score in enumerate(SCORES):
