@@ -16,6 +16,7 @@ import os
 from typing import Any, Dict, List
 
 import matplotlib
+import numpy as np
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
@@ -290,6 +291,88 @@ def fig_reverie(res_dir: str, out: str) -> None:
     plt.close(fig)
 
 
+_ALL_CONDITIONS = (
+    "duet_full", "hamt", "recbert_prevalent", "recbert_oscar",
+    "duet_full_reverie", "hamt_reverie",
+)
+_COND_LABEL = {
+    "duet_full": "DUET (R2R)",
+    "hamt": "HAMT (R2R)",
+    "recbert_prevalent": "RecBERT-PREV (R2R)",
+    "recbert_oscar": "RecBERT-OSCAR (R2R)",
+    "duet_full_reverie": "DUET (REVERIE)",
+    "hamt_reverie": "HAMT (REVERIE)",
+}
+_SCORE_COLOR = {"THR": BLUE, "APS": AQUA, "RAPS": RED}
+
+
+def _fig_cov_single(res_dir: str, out: str, cond: str, score: str) -> None:
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    dense = _load(res_dir, "cp_dense.json")
+    row = next(r for r in dense if r["condition"] == cond)
+    alphas = sorted(float(a) for a in row["family"])
+    keys = [f"{a:.2f}" for a in alphas]
+    fig, ax = plt.subplots(figsize=(2.7, 2.1))
+    ax.plot(
+        alphas, [1 - a for a in alphas], color=MUTED, lw=0.9,
+        ls=(0, (4, 3)),
+    )
+    for weight, ls, mk, lbl in (
+        ("pf", "-", "o", "Formula-based"),
+        ("mlp", "--", None, "Learned"),
+    ):
+        ax.plot(
+            alphas,
+            [row["family"][a][score][weight]["cov_step"] for a in keys],
+            color=_SCORE_COLOR[score], ls=ls, lw=1.3, marker=mk, ms=2.4,
+            label=lbl,
+        )
+    ax.set_xlabel(r"$\alpha$")
+    ax.set_ylabel("Coverage")
+    ax.set_title(f"{_COND_LABEL[cond]} -- {score}", fontsize=8.2)
+    _despine(ax)
+    ax.legend(fontsize=6.0, frameon=False, loc="lower left")
+    fig.tight_layout(pad=0.4)
+    fig.savefig(out)
+    plt.close(fig)
+
+
+def _fig_singleton_single(
+    res_dir: str, out: str, cond: str, score: str
+) -> None:
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    dense = _load(res_dir, "cp_dense.json")
+    row = next(r for r in dense if r["condition"] == cond)
+    show = [a for a in ("0.10", "0.20", "0.30", "0.40", "0.50")
+            if a in row["family"]]
+    methods = ("base", "pf", "mlp")
+    method_color = {"base": MUTED, "pf": BLUE, "mlp": AQUA}
+    x = np.arange(len(show))
+    width = 0.25
+    fig, ax = plt.subplots(figsize=(2.9, 2.1))
+    for i, m in enumerate(methods):
+        vals = [
+            row["base"][a][score]["singleton"]
+            if m == "base"
+            else row["family"][a][score][m]["singleton"]
+            for a in show
+        ]
+        ax.bar(
+            x + (i - 1) * width, vals, width, label=m,
+            color=method_color[m],
+        )
+    ax.set_xticks(x)
+    ax.set_xticklabels(show, fontsize=6.5)
+    ax.set_xlabel(r"$\alpha$")
+    ax.set_ylabel("Singleton rate")
+    ax.set_title(f"{_COND_LABEL[cond]} -- {score}", fontsize=8.2)
+    _despine(ax)
+    ax.legend(fontsize=6.0, frameon=False, loc="upper right")
+    fig.tight_layout(pad=0.4)
+    fig.savefig(out)
+    plt.close(fig)
+
+
 def make_all(res_dir: str, fig_dir: str) -> None:
     os.makedirs(fig_dir, exist_ok=True)
     jobs = [
@@ -297,6 +380,20 @@ def make_all(res_dir: str, fig_dir: str) -> None:
         ("fig_reverie.png", fig_reverie),
         ("fig_closedloop.png", fig_closedloop),
     ]
+    for cond in _ALL_CONDITIONS:
+        for score in ("THR", "APS", "RAPS"):
+            jobs.append((
+                os.path.join("coverage_grid", f"cov_{cond}_{score}.png"),
+                lambda r, o, c=cond, s=score: _fig_cov_single(r, o, c, s),
+            ))
+            jobs.append((
+                os.path.join(
+                    "coverage_grid", f"singleton_{cond}_{score}.png"
+                ),
+                lambda r, o, c=cond, s=score: _fig_singleton_single(
+                    r, o, c, s
+                ),
+            ))
     for name, fn in jobs:
         try:
             fn(res_dir, os.path.join(fig_dir, name))
