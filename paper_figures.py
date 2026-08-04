@@ -20,11 +20,34 @@ import numpy as np
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
+import numpy as np  # noqa: E402
 
 BLUE, AQUA, RED = "#2a78d6", "#1baf7a", "#e34948"
 INK, MUTED, GRID = "#0b0b0b", "#52514e", "#d9d8d3"
 ALPHAS = [0.10, 0.20, 0.30]
 KEYS = ["0.10", "0.20", "0.30"]
+
+# Per-backbone colour / marker / linestyle for the appendix figures, whose
+# legends are placed OUTSIDE the axes (bbox_inches="tight" on save) so nothing
+# in the plotting area is ever covered.
+ORDER = [
+    "duet_full", "hamt", "recbert_prevalent",
+    "recbert_oscar", "duet_full_reverie", "hamt_reverie",
+]
+R2R = ORDER[:4]
+FLABEL = {
+    "duet_full": "DUET", "hamt": "HAMT",
+    "recbert_prevalent": "RecBERT-P", "recbert_oscar": "RecBERT-O",
+    "duet_full_reverie": "DUET-REV", "hamt_reverie": "HAMT-REV",
+}
+STYLE = {
+    "duet_full": ("#2a78d6", "o", "-"),
+    "hamt": ("#e34948", "^", "-"),
+    "recbert_prevalent": ("#7b52d0", "D", "--"),
+    "recbert_oscar": ("#e08a1e", "v", "-"),
+    "duet_full_reverie": ("#17a2b8", "P", ":"),
+    "hamt_reverie": ("#c13aa0", "X", ":"),
+}
 
 plt.rcParams.update(
     {
@@ -203,31 +226,107 @@ def fig_qualitative(res_dir: str, out: str) -> None:
     plt.close(fig)
 
 
+_REV_SCORE_COLOR = {"THR": BLUE, "APS": AQUA, "RAPS": RED}
+_REV_WEIGHT_STYLE = {"base": ":", "pf": "-", "mlp": "--"}
+_REV_WEIGHT_MARKER = {"base": None, "pf": "o", "mlp": None}
+
+
+def _reverie_alphas(cond: Dict[str, Any]) -> tuple:
+    alphas = sorted(float(a) for a in cond["family"])
+    return alphas, [f"{a:.2f}" for a in alphas]
+
+
+def _reverie_head_values(
+    cond: Dict[str, Any], keys: List[str], head: str
+) -> Dict[str, Dict[str, List[float]]]:
+    """head is 'nav' or 'object'. Returns {score: {base, pf, mlp}}."""
+    out: Dict[str, Dict[str, List[float]]] = {}
+    for score in ("THR", "APS", "RAPS"):
+        if head == "nav":
+            out[score] = {
+                "base": [cond["base"][a][score]["cov_step"] for a in keys],
+                "pf": [
+                    cond["family"][a][score]["pf"]["cov_step"]
+                    for a in keys
+                ],
+                "mlp": [
+                    cond["family"][a][score]["mlp"]["cov_step"]
+                    for a in keys
+                ],
+            }
+        else:
+            out[score] = {
+                "base": [
+                    cond["object"][a][score]["base"]["cov"] for a in keys
+                ],
+                "pf": [
+                    cond["object"][a][score]["family"]["pf"]["cov"]
+                    for a in keys
+                ],
+                "mlp": [
+                    cond["object"][a][score]["family"]["mlp"]["cov"]
+                    for a in keys
+                ],
+            }
+    return out
+
+
+def _reverie_target_line(ax, alphas: List[float]) -> None:
+    ax.plot(
+        alphas,
+        [1 - a for a in alphas],
+        color=MUTED,
+        lw=0.9,
+        ls=(0, (4, 3)),
+        zorder=2,
+    )
+    ax.set_xticks([0.1, 0.2, 0.3, 0.4, 0.5])
+    ax.set_xlabel(r"$\alpha$")
+    _despine(ax)
+
+
+def _reverie_plot_head(ax, alphas: List[float], values: Dict) -> None:
+    for score in ("THR", "APS", "RAPS"):
+        for weight in ("base", "pf", "mlp"):
+            ax.plot(
+                alphas,
+                values[score][weight],
+                color=_REV_SCORE_COLOR[score],
+                ls=_REV_WEIGHT_STYLE[weight],
+                lw=1.1,
+                marker=_REV_WEIGHT_MARKER[weight],
+                ms=2.0,
+            )
+
+
+def _reverie_legend_handles() -> List:
+    from matplotlib.lines import Line2D
+
+    return [
+        Line2D([], [], color=_REV_SCORE_COLOR[s], lw=1.3, label=s)
+        for s in ("THR", "APS", "RAPS")
+    ] + [
+        Line2D([], [], color=MUTED, lw=1.1, ls=":", label="base"),
+        Line2D([], [], color=MUTED, lw=1.1, ls="-", label="formula-based"),
+        Line2D([], [], color=MUTED, lw=1.1, ls="--", label="learned"),
+    ]
+
+
 def fig_reverie(res_dir: str, out: str) -> None:
     """REVERIE, DUET only, dense alpha grid: coverage for every base score
-    (THR/APS/RAPS) under the formula-based (pf, solid) and learned (mlp,
-    dashed) weight, navigation head (left) and grounding head (right)."""
+    (THR/APS/RAPS) with no intervention (base, dotted), the formula-based
+    weight (pf, solid), and the learned weight (mlp, dashed), navigation
+    head (left) and grounding head (right). The base lines make the ENCP
+    before/after contrast explicit in the same panel."""
     dense = _load(res_dir, "cp_dense.json")
     cond = next(r for r in dense if r["condition"] == "duet_full_reverie")
-    alphas = sorted(float(a) for a in cond["family"])
-    keys = [f"{a:.2f}" for a in alphas]
-
-    score_color = {"THR": BLUE, "APS": AQUA, "RAPS": RED}
-    weight_style = {"pf": "-", "mlp": "--"}
+    alphas, keys = _reverie_alphas(cond)
+    nav_vals = _reverie_head_values(cond, keys, "nav")
+    obj_vals = _reverie_head_values(cond, keys, "object")
 
     fig, (axA, axB) = plt.subplots(1, 2, figsize=(3.6, 1.7), sharey=True)
     for ax in (axA, axB):
-        ax.plot(
-            alphas,
-            [1 - a for a in alphas],
-            color=MUTED,
-            lw=0.9,
-            ls=(0, (4, 3)),
-            zorder=2,
-        )
-        ax.set_xticks([0.1, 0.2, 0.3, 0.4, 0.5])
-        ax.set_xlabel(r"$\alpha$")
-        _despine(ax)
+        _reverie_target_line(ax, alphas)
     axA.annotate(
         r"Target $1{-}\alpha$",
         xy=(0.35, 0.60),
@@ -237,58 +336,76 @@ def fig_reverie(res_dir: str, out: str) -> None:
         ha="center",
         va="top",
     )
-
-    for score in ("THR", "APS", "RAPS"):
-        for weight in ("pf", "mlp"):
-            axA.plot(
-                alphas,
-                [cond["family"][a][score][weight]["cov_step"] for a in keys],
-                color=score_color[score],
-                ls=weight_style[weight],
-                lw=1.1,
-                marker="o" if weight == "pf" else None,
-                ms=2.0,
-            )
-            axB.plot(
-                alphas,
-                [
-                    cond["object"][a][score]["family"][weight]["cov"]
-                    for a in keys
-                ],
-                color=score_color[score],
-                ls=weight_style[weight],
-                lw=1.1,
-                marker="o" if weight == "pf" else None,
-                ms=2.0,
-            )
+    _reverie_plot_head(axA, alphas, nav_vals)
+    _reverie_plot_head(axB, alphas, obj_vals)
     axA.set_title("Navigation head", fontsize=7.2)
     axA.set_ylabel("Coverage")
     axB.set_title("Grounding head", fontsize=7.2)
 
-    from matplotlib.lines import Line2D
-
-    score_handles = [
-        Line2D([], [], color=score_color[s], lw=1.3, label=s)
-        for s in ("THR", "APS", "RAPS")
-    ]
-    style_handles = [
-        Line2D([], [], color=MUTED, lw=1.1, ls="-", label="formula-based"),
-        Line2D([], [], color=MUTED, lw=1.1, ls="--", label="learned"),
-    ]
     fig.legend(
-        handles=score_handles + style_handles,
+        handles=_reverie_legend_handles(),
         loc="lower center",
         bbox_to_anchor=(0.55, 0.865),
-        ncol=5,
+        ncol=6,
         handlelength=1.5,
         borderaxespad=0.0,
-        columnspacing=0.9,
+        columnspacing=0.8,
         frameon=False,
     )
-    axA.set_ylim(0.3, 1.02)
+    axA.set_ylim(0.15, 1.02)
     fig.tight_layout(pad=0.4, w_pad=0.8, rect=[0, 0, 1, 0.84])
     fig.savefig(out)
     plt.close(fig)
+
+
+def _fig_reverie_single_head(res_dir: str, out: str, head: str) -> None:
+    dense = _load(res_dir, "cp_dense.json")
+    cond = next(r for r in dense if r["condition"] == "duet_full_reverie")
+    alphas, keys = _reverie_alphas(cond)
+    values = _reverie_head_values(cond, keys, head)
+
+    fig, ax = plt.subplots(figsize=(2.6, 2.1))
+    _reverie_target_line(ax, alphas)
+    ax.annotate(
+        r"Target $1{-}\alpha$",
+        xy=(0.35, 0.60),
+        fontsize=6.0,
+        color=MUTED,
+        rotation=-30,
+        ha="center",
+        va="top",
+    )
+    _reverie_plot_head(ax, alphas, values)
+    ax.set_title(
+        "Navigation head" if head == "nav" else "Grounding head",
+        fontsize=8.2,
+    )
+    ax.set_ylabel("Coverage")
+    ax.legend(
+        handles=_reverie_legend_handles(),
+        fontsize=5.4,
+        frameon=False,
+        loc="lower left",
+        ncol=2,
+        handlelength=1.4,
+        columnspacing=0.7,
+    )
+    ax.set_ylim(0.15, 1.02)
+    fig.tight_layout(pad=0.4)
+    fig.savefig(out)
+    plt.close(fig)
+
+
+def fig_reverie_nav(res_dir: str, out: str) -> None:
+    """Navigation head alone -- same data/lines as fig_reverie's left
+    panel, standalone."""
+    _fig_reverie_single_head(res_dir, out, "nav")
+
+
+def fig_reverie_grounding(res_dir: str, out: str) -> None:
+    """Grounding head alone -- same data/lines as fig_reverie's right
+    panel, standalone."""
+    _fig_reverie_single_head(res_dir, out, "object")
 
 
 _ALL_CONDITIONS = (
@@ -430,12 +547,401 @@ def _fig_singleton_base_only(
     plt.close(fig)
 
 
+# ==========================================================================
+# Appendix figures. Each is standalone, larger than the column figures above,
+# and places its legend OUTSIDE the axes; every figure is saved with
+# bbox_inches="tight" so the external legend is never clipped and nothing
+# inside the plotting area is covered.
+# ==========================================================================
+def _legend_right(ax, ncol: int = 1, **kw) -> None:
+    ax.legend(
+        bbox_to_anchor=(1.02, 1.0), loc="upper left", borderaxespad=0.0,
+        handlelength=1.8, labelspacing=0.35, fontsize=6.6, ncol=ncol, **kw
+    )
+
+
+def _legend_top(ax, ncol: int, **kw) -> None:
+    ax.legend(
+        bbox_to_anchor=(0.5, 1.02), loc="lower center", borderaxespad=0.0,
+        handlelength=1.6, columnspacing=1.2, fontsize=6.8, ncol=ncol,
+        frameon=False, **kw
+    )
+
+
+def _save(fig, out: str) -> None:
+    fig.savefig(out, bbox_inches="tight")
+    plt.close(fig)
+
+
+def fig_app_dense_cov(res_dir: str, out: str) -> None:
+    """Parameter-free step coverage across the nine-level alpha grid: every
+    backbone clears the target 1-alpha at every level."""
+    dense = {r["condition"]: r for r in _load(res_dir, "cp_dense.json")}
+    al = sorted(float(a) for a in dense["duet_full"]["zeroshot"])
+    keys = [f"{a:.2f}" for a in al]
+    fig, ax = plt.subplots(figsize=(3.3, 2.25))
+    ax.plot(al, [1 - a for a in al], color=MUTED, lw=1.1, ls=(0, (4, 3)),
+            label=r"Target $1{-}\alpha$", zorder=2)
+    for c in ORDER:
+        col, mk, ls = STYLE[c]
+        ax.plot(al, [dense[c]["zeroshot"][a]["THR"]["cov_step"] for a in keys],
+                color=col, marker=mk, ms=3.0, lw=1.2, ls=ls, label=FLABEL[c])
+    ax.set_xlabel(r"$\alpha$")
+    ax.set_ylabel("step coverage")
+    ax.set_ylim(0.72, 1.005)
+    _despine(ax)
+    _legend_right(ax)
+    _save(fig, out)
+
+
+def fig_app_dense_size(res_dir: str, out: str) -> None:
+    """Parameter-free mean set size shrinks smoothly with alpha -- the
+    threshold is responsive, not collapsed."""
+    dense = {r["condition"]: r for r in _load(res_dir, "cp_dense.json")}
+    al = sorted(float(a) for a in dense["duet_full"]["zeroshot"])
+    keys = [f"{a:.2f}" for a in al]
+    fig, ax = plt.subplots(figsize=(3.3, 2.25))
+    for c in ORDER:
+        col, mk, ls = STYLE[c]
+        ax.plot(al, [dense[c]["zeroshot"][a]["THR"]["mean_set"] for a in keys],
+                color=col, marker=mk, ms=3.0, lw=1.2, ls=ls, label=FLABEL[c])
+    ax.set_xlabel(r"$\alpha$")
+    ax.set_ylabel(r"mean set size $\overline{|C|}$")
+    _despine(ax)
+    _legend_right(ax)
+    _save(fig, out)
+
+
+def fig_app_collapse(res_dir: str, out: str) -> None:
+    """Base-CP singleton rate versus alpha: on every backbone the base score
+    collapses to all-singleton sets as alpha grows (APS shown; THR similar)."""
+    dense = {r["condition"]: r for r in _load(res_dir, "cp_dense.json")}
+    al = sorted(float(a) for a in dense["duet_full"]["base"])
+    keys = [f"{a:.2f}" for a in al]
+    fig, ax = plt.subplots(figsize=(3.3, 2.25))
+    for c in ORDER:
+        col, mk, ls = STYLE[c]
+        ax.plot(al, [dense[c]["base"][a]["APS"]["singleton"] for a in keys],
+                color=col, marker=mk, ms=3.0, lw=1.2, ls=ls, label=FLABEL[c])
+    ax.set_xlabel(r"$\alpha$")
+    ax.set_ylabel("base-CP singleton rate (APS)")
+    ax.set_ylim(-0.02, 1.03)
+    _despine(ax)
+    _legend_right(ax)
+    _save(fig, out)
+
+
+def fig_app_indist_simul(res_dir: str, out: str) -> None:
+    """The theorem, empirically: whole-trajectory (simultaneous) coverage
+    sits far below target under the seen->unseen shift but returns to
+    k/(n+1)~1-alpha on exchangeable in-distribution halves."""
+    cp = {r["condition"]: r for r in _load(res_dir, "cp_results.json")}
+    ind = {r["condition"]: r for r in _load(res_dir, "indist.json")}
+    shifted = [cp[c]["0.10"]["family_full"]["THR"]["pf"]["cov_simul"]
+               for c in ORDER]
+    indist = [ind[c]["nav_simul"]["0.10"] for c in ORDER]
+    x = np.arange(len(ORDER))
+    w = 0.38
+    fig, ax = plt.subplots(figsize=(3.5, 2.2))
+    ax.bar(x - w / 2, shifted, w, color=RED, label="shifted (seen$\\to$unseen)")
+    ax.bar(x + w / 2, indist, w, color=BLUE, label="in-distribution")
+    ax.axhline(0.90, color=INK, lw=1.1, ls="--", label=r"Target $1{-}\alpha$")
+    ax.set_xticks(x)
+    ax.set_xticklabels([FLABEL[c] for c in ORDER], rotation=40, ha="right")
+    ax.set_ylabel(r"simultaneous coverage ($\alpha{=}0.10$)")
+    ax.set_ylim(0.6, 1.0)
+    _despine(ax)
+    _legend_top(ax, ncol=3)
+    _save(fig, out)
+
+
+def fig_app_gap(res_dir: str, out: str) -> None:
+    """Step-averaged versus simultaneous coverage under shift: the step
+    average clears target while the whole-trajectory number does not."""
+    cp = {r["condition"]: r for r in _load(res_dir, "cp_results.json")}
+    step = [cp[c]["0.10"]["family_full"]["THR"]["pf"]["cov_step"]
+            for c in ORDER]
+    simul = [cp[c]["0.10"]["family_full"]["THR"]["pf"]["cov_simul"]
+             for c in ORDER]
+    x = np.arange(len(ORDER))
+    w = 0.38
+    fig, ax = plt.subplots(figsize=(3.5, 2.2))
+    ax.bar(x - w / 2, step, w, color=BLUE, label="step-averaged")
+    ax.bar(x + w / 2, simul, w, color=AQUA, label="simultaneous")
+    ax.axhline(0.90, color=INK, lw=1.1, ls="--", label=r"Target $1{-}\alpha$")
+    ax.set_xticks(x)
+    ax.set_xticklabels([FLABEL[c] for c in ORDER], rotation=40, ha="right")
+    ax.set_ylabel(r"coverage ($\alpha{=}0.10$)")
+    ax.set_ylim(0.6, 1.0)
+    _despine(ax)
+    _legend_top(ax, ncol=3)
+    _save(fig, out)
+
+
+def fig_app_transfer(res_dir: str, out: str) -> None:
+    """Cross-backbone threshold transfer: coverage when the row backbone's
+    threshold is applied to the column backbone's test split."""
+    tr = _load(res_dir, "transfer.json")
+    order = ["duet_full", "hamt",
+             "recbert_oscar", "recbert_prevalent"]
+    lab = [FLABEL[c] for c in order]
+    M = np.array([[tr["matrix"][s][t]["cov_step"] for t in order]
+                  for s in order])
+    fig, ax = plt.subplots(figsize=(3.2, 2.7))
+    im = ax.imshow(M, cmap="viridis", vmin=0.88, vmax=1.0, aspect="auto")
+    ax.set_xticks(range(len(order)))
+    ax.set_xticklabels(lab, rotation=40, ha="right")
+    ax.set_yticks(range(len(order)))
+    ax.set_yticklabels(lab)
+    ax.set_xlabel("applied to (test split)")
+    ax.set_ylabel(r"calibrated on ($\hat q$ source)")
+    for i in range(len(order)):
+        for j in range(len(order)):
+            ax.text(j, i, f"{M[i, j]:.2f}", ha="center", va="center",
+                    fontsize=5.8,
+                    color="white" if M[i, j] < 0.96 else INK)
+    ax.grid(False)
+    cb = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+    cb.set_label("step coverage", fontsize=6.6)
+    cb.ax.tick_params(labelsize=6.0)
+    _save(fig, out)
+
+
+def fig_app_family(res_dir: str, out: str) -> None:
+    """The weight family at alpha=0.10: every member clears the target, so
+    the alpha-response is restored by any positive scale, not a tuned one."""
+    cp = {r["condition"]: r for r in _load(res_dir, "cp_results.json")}
+    members = ["w0", "pf", "mlp", "hybrid", "random"]
+    mlab = {"w0": r"$w{=}0$", "pf": "pf", "mlp": "mlp",
+            "hybrid": "hybrid", "random": "random"}
+    mcol = {"w0": "#8c8c8c", "pf": BLUE, "mlp": "#e08a1e",
+            "hybrid": "#1baf7a", "random": "#c13aa0"}
+    x = np.arange(len(ORDER))
+    nmemb = len(members)
+    w = 0.15
+    fig, ax = plt.subplots(figsize=(3.6, 2.2))
+    for i, m in enumerate(members):
+        ys = [cp[c]["0.10"]["family"]["THR"][m]["cov_step"] for c in ORDER]
+        ax.bar(x + (i - (nmemb - 1) / 2) * w, ys, w,
+               color=mcol[m], label=mlab[m])
+    ax.axhline(0.90, color=INK, lw=1.0, ls="--", label=r"target")
+    ax.set_xticks(x)
+    ax.set_xticklabels([FLABEL[c] for c in ORDER], rotation=40, ha="right")
+    ax.set_ylabel(r"step coverage ($\alpha{=}0.10$)")
+    ax.set_ylim(0.9, 1.0)
+    _despine(ax)
+    _legend_top(ax, ncol=6)
+    _save(fig, out)
+
+
+def fig_app_dtv(res_dir: str, out: str) -> None:
+    """Reduced-score shift versus the simultaneous-coverage shortfall: the
+    larger the distribution shift, the further whole-trajectory coverage
+    falls below target."""
+    cp = {r["condition"]: r for r in _load(res_dir, "cp_results.json")}
+    fig, ax = plt.subplots(figsize=(3.3, 2.25))
+    for c in ORDER:
+        col, mk, _ = STYLE[c]
+        d = cp[c]["shift"]["dTV_reduced"]
+        short = 0.90 - cp[c]["0.10"]["family_full"]["THR"]["pf"]["cov_simul"]
+        ax.scatter(d, short, s=42, color=col, marker=mk,
+                   edgecolor="white", linewidth=0.4, label=FLABEL[c])
+    ax.axhline(0.0, color=MUTED, lw=0.8, ls=":")
+    ax.set_xlabel(r"reduced-score shift $\widehat{d}_{\mathrm{TV}}$")
+    ax.set_ylabel(r"simul. shortfall $(1{-}\alpha){-}\mathrm{cov}$")
+    _despine(ax)
+    _legend_right(ax)
+    _save(fig, out)
+
+
+def fig_app_conditional(res_dir: str, out: str) -> None:
+    """Coverage by policy-confidence quartile: the only shortfall is on the
+    most-confident quartile, where the set is a singleton and a confidently
+    wrong step is missed."""
+    cp = {r["condition"]: r for r in _load(res_dir, "cp_results.json")}
+    q = [1, 2, 3, 4]
+    fig, ax = plt.subplots(figsize=(3.3, 2.25))
+    ax.axhline(0.90, color=INK, lw=1.0, ls="--", label=r"Target $1{-}\alpha$")
+    for c in ORDER:
+        col, mk, ls = STYLE[c]
+        ys = cp[c]["diagnostics"]["cov_by_pmax_quartile"]
+        ax.plot(q, ys, color=col, marker=mk, ms=3.2, lw=1.2, ls=ls,
+                label=FLABEL[c])
+    ax.set_xticks(q)
+    ax.set_xticklabels([r"Q1", r"Q2", r"Q3", r"Q4"])
+    ax.set_xlabel(r"$p_{\max}$ quartile (least $\to$ most confident)")
+    ax.set_ylabel(r"step coverage ($\alpha{=}0.10$)")
+    _despine(ax)
+    _legend_right(ax)
+    _save(fig, out)
+
+
+def fig_app_budget(res_dir: str, out: str) -> None:
+    """Query-budget recall of the policy's argmax errors, averaged over
+    backbones: choosing the steps to ask by set size is close to choosing by
+    lowest confidence."""
+    cp = {r["condition"]: r for r in _load(res_dir, "cp_results.json")}
+    budgets = ["0.05", "0.10", "0.20", "0.30"]
+    xs = [float(b) for b in budgets]
+    setr = np.mean([[cp[c]["diagnostics"]["query_budget"][b]
+                     ["set_size_trigger"] for b in budgets]
+                    for c in ORDER], axis=0)
+    pmr = np.mean([[cp[c]["diagnostics"]["query_budget"][b]["pmax_trigger"]
+                    for b in budgets] for c in ORDER], axis=0)
+    fig, ax = plt.subplots(figsize=(3.3, 2.2))
+    ax.plot(xs, setr, color=BLUE, marker="o", ms=3.4, lw=1.4,
+            label="set-size trigger")
+    ax.plot(xs, pmr, color=AQUA, marker="s", ms=3.2, lw=1.4, ls="--",
+            label=r"confidence trigger")
+    ax.plot([0, 0.3], [0, 0.3], color=MUTED, lw=0.8, ls=":", label="random")
+    ax.set_xlabel("fraction of steps queried")
+    ax.set_ylabel("recall of argmax errors")
+    _despine(ax)
+    _legend_right(ax)
+    _save(fig, out)
+
+
+def fig_app_object(res_dir: str, out: str) -> None:
+    """REVERIE object-grounding head: base vs parameter-free normalised split
+    CP undercover out of distribution; both are shown against target."""
+    cp = {r["condition"]: r for r in _load(res_dir, "cp_results.json")}
+    keys = ["0.10", "0.20", "0.30"]
+    al = [0.10, 0.20, 0.30]
+    fig, ax = plt.subplots(figsize=(3.3, 2.25))
+    ax.plot(al, [1 - a for a in al], color=MUTED, lw=1.1, ls=(0, (4, 3)),
+            label=r"Target $1{-}\alpha$")
+    for c, col, mk in (("duet_full_reverie", BLUE, "o"),
+                       ("hamt_reverie", RED, "^")):
+        o = cp[c].get("object_cp")
+        if not o:
+            continue
+        ax.plot(al, [o[a]["THR"]["base"]["cov"] for a in keys], color=col,
+                marker=mk, ms=3.2, lw=1.3, label=f"{FLABEL[c]} base")
+        ax.plot(al, [o[a]["THR"]["norm"]["cov"] for a in keys], color=col,
+                marker=mk, ms=3.2, lw=1.1, ls=":",
+                label=f"{FLABEL[c]} norm.")
+    ax.set_xlabel(r"$\alpha$")
+    ax.set_ylabel("object-head coverage")
+    ax.set_xticks(al)
+    _despine(ax)
+    _legend_right(ax)
+    _save(fig, out)
+
+
+def fig_app_mc(res_dir: str, out: str) -> None:
+    """Monte-Carlo validation of the finite-sample bound on synthetic
+    exchangeable episodes: per-trial whole-trajectory coverage concentrates
+    at k/(n+1) ~ 1-alpha."""
+    rng = np.random.RandomState(0)
+    n_cal, n_test, alpha, trials = 200, 300, 0.10, 3000
+    k = int(np.ceil((n_cal + 1) * (1 - alpha)))
+    covs = np.empty(trials)
+    for i in range(trials):
+        z = rng.rand(n_cal + n_test)
+        q = np.sort(z[:n_cal])[k - 1]
+        covs[i] = (z[n_cal:] <= q).mean()
+    fig, ax = plt.subplots(figsize=(3.3, 2.2))
+    ax.hist(covs, bins=28, color=BLUE, alpha=0.8, edgecolor="white", lw=0.3,
+            label="per-trial coverage")
+    ax.axvline(1 - alpha, color=RED, lw=1.4, ls="--",
+               label=r"Target $1{-}\alpha$")
+    ax.axvline(float(covs.mean()), color=INK, lw=1.4,
+               label=f"mean {covs.mean():.3f}")
+    ax.set_xlabel("whole-trajectory coverage per trial")
+    ax.set_ylabel("trials")
+    _despine(ax)
+    _legend_right(ax)
+    _save(fig, out)
+
+
+def fig_app_collapse2(res_dir: str, out: str) -> None:
+    """Overconfidence collapse: on a concentrated backbone (DUET) the base APS
+    teacher score is a point mass at zero, so the calibrated threshold has
+    nowhere to sit; the parameter-free normalisation spreads the same scores
+    across the unit interval and restores a responsive threshold."""
+    import torch
+    from cp_core.split import Split
+    dump_dir = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "dumps"
+    )
+    d = torch.load(os.path.join(dump_dir, "duet_full.pt"), weights_only=True)
+    sp = Split.from_records(d["test"])
+    aps = sp.base_teacher["APS"]
+    snorm = sp.base_teacher["THR"] / (2.0 - sp.p_max)
+    bins = np.linspace(0, 1, 26)
+    fig, (axA, axB) = plt.subplots(1, 2, figsize=(5.4, 2.0))
+    axA.hist(aps, bins=bins, color=RED, alpha=0.85, edgecolor="white", lw=0.3)
+    axA.set_title(r"base APS score", fontsize=8.5)
+    axA.set_xlabel("teacher nonconformity score")
+    axA.set_ylabel("steps")
+    axA.annotate(f"{(aps < 1e-9).mean() * 100:.0f}% at $0$",
+                 xy=(0.05, 0.86), xycoords="axes fraction", fontsize=8,
+                 color=RED)
+    axB.hist(snorm, bins=bins, color=BLUE, alpha=0.85, edgecolor="white",
+             lw=0.3)
+    axB.set_title(r"normalised score $s_{\mathrm{norm}}$", fontsize=8.5)
+    axB.set_xlabel("teacher nonconformity score")
+    for ax in (axA, axB):
+        _despine(ax)
+    fig.tight_layout(w_pad=1.4)
+    _save(fig, out)
+
+
+def fig_app_shift_hist(res_dir: str, out: str) -> None:
+    """Seen-to-unseen distribution shift: the density of the reduced score
+    s~ under the calibration (val-seen) and test (val-unseen) laws for DUET;
+    the visible gap is the total-variation distance d_TV=0.225 that pulls
+    simultaneous coverage below target."""
+    import torch
+    from cp_core.split import Split
+    dump_dir = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)), "dumps"
+    )
+    d = torch.load(os.path.join(dump_dir, "duet_full.pt"), weights_only=True)
+
+    def epmax(recs):
+        sp = Split.from_records(recs)
+        s = sp.base_teacher["THR"] / (2.0 - sp.p_max)
+        return np.clip([s[a:b].max() for a, b in sp.ep_ptr if b > a], 0, 1)
+
+    rc, rt = epmax(d["cal"]), epmax(d["test"])
+    bins = np.linspace(0, 1, 41)
+    fig, ax = plt.subplots(figsize=(3.5, 2.15))
+    ax.hist(rc, bins=bins, density=True, color=BLUE, alpha=0.55,
+            label="val-seen (calibration)")
+    ax.hist(rt, bins=bins, density=True, color=RED, alpha=0.55,
+            label="val-unseen (test)")
+    ax.set_xlabel(r"reduced score $\tilde s=\varphi(E)$")
+    ax.set_ylabel("density")
+    ax.annotate(r"$\widehat{d}_{\mathrm{TV}}=0.225$", xy=(0.03, 0.86),
+                xycoords="axes fraction", fontsize=8)
+    _despine(ax)
+    _legend_top(ax, ncol=2)
+    _save(fig, out)
+
+
 def make_all(res_dir: str, fig_dir: str) -> None:
     os.makedirs(fig_dir, exist_ok=True)
     jobs = [
         ("fig_qualitative.png", fig_qualitative),
         ("fig_reverie.png", fig_reverie),
+        ("fig_reverie_nav.png", fig_reverie_nav),
+        ("fig_reverie_grounding.png", fig_reverie_grounding),
         ("fig_closedloop.png", fig_closedloop),
+        ("fig_app_collapse2.png", fig_app_collapse2),
+        ("fig_app_shift_hist.png", fig_app_shift_hist),
+        ("fig_app_dense_cov.png", fig_app_dense_cov),
+        ("fig_app_dense_size.png", fig_app_dense_size),
+        ("fig_app_collapse.png", fig_app_collapse),
+        ("fig_app_indist_simul.png", fig_app_indist_simul),
+        ("fig_app_gap.png", fig_app_gap),
+        ("fig_app_transfer.png", fig_app_transfer),
+        ("fig_app_family.png", fig_app_family),
+        ("fig_app_dtv.png", fig_app_dtv),
+        ("fig_app_conditional.png", fig_app_conditional),
+        ("fig_app_budget.png", fig_app_budget),
+        ("fig_app_object.png", fig_app_object),
+        ("fig_app_mc.png", fig_app_mc),
     ]
     for cond in _ALL_CONDITIONS:
         for score in ("THR", "APS", "RAPS"):
