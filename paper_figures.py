@@ -367,7 +367,64 @@ def _fig_singleton_single(
     ax.set_ylabel("Singleton rate")
     ax.set_title(f"{_COND_LABEL[cond]} -- {score}", fontsize=8.2)
     _despine(ax)
-    ax.legend(fontsize=6.0, frameon=False, loc="upper right")
+    ax.legend(
+        fontsize=6.0, frameon=False, loc="upper left",
+        bbox_to_anchor=(1.01, 1.0), borderaxespad=0.0,
+    )
+    fig.tight_layout(pad=0.4)
+    fig.savefig(out, bbox_inches="tight")
+    plt.close(fig)
+
+
+def _fig_cov_base_only(res_dir: str, out: str, cond: str, score: str) -> None:
+    """Coverage vs dense alpha for the raw base score alone -- no ENCP
+    (formula-based or learned) intervention at all."""
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    dense = _load(res_dir, "cp_dense.json")
+    row = next(r for r in dense if r["condition"] == cond)
+    alphas = sorted(float(a) for a in row["base"])
+    keys = [f"{a:.2f}" for a in alphas]
+    fig, ax = plt.subplots(figsize=(2.7, 2.1))
+    ax.plot(
+        alphas, [1 - a for a in alphas], color=MUTED, lw=0.9,
+        ls=(0, (4, 3)),
+    )
+    ax.plot(
+        alphas,
+        [row["base"][a][score]["cov_step"] for a in keys],
+        color=_SCORE_COLOR[score], ls="-", lw=1.3, marker="o", ms=2.4,
+    )
+    ax.set_xlabel(r"$\alpha$")
+    ax.set_ylabel("Coverage")
+    ax.set_title(f"{_COND_LABEL[cond]} -- {score} (base)", fontsize=8.2)
+    _despine(ax)
+    fig.tight_layout(pad=0.4)
+    fig.savefig(out)
+    plt.close(fig)
+
+
+def _fig_singleton_base_only(
+    res_dir: str, out: str, cond: str, score: str
+) -> None:
+    """Singleton rate vs dense alpha for the raw base score alone -- no
+    ENCP intervention at all. A line, not grouped bars, since there is
+    only one series to show (unlike the pf/mlp/base comparison chart)."""
+    os.makedirs(os.path.dirname(out), exist_ok=True)
+    dense = _load(res_dir, "cp_dense.json")
+    row = next(r for r in dense if r["condition"] == cond)
+    alphas = sorted(float(a) for a in row["base"])
+    keys = [f"{a:.2f}" for a in alphas]
+    fig, ax = plt.subplots(figsize=(2.7, 2.1))
+    ax.plot(
+        alphas,
+        [row["base"][a][score]["singleton"] for a in keys],
+        color=_SCORE_COLOR[score], ls="-", lw=1.3, marker="o", ms=2.4,
+    )
+    ax.set_xlabel(r"$\alpha$")
+    ax.set_ylabel("Singleton rate")
+    ax.set_ylim(-0.02, 1.02)
+    ax.set_title(f"{_COND_LABEL[cond]} -- {score} (base)", fontsize=8.2)
+    _despine(ax)
     fig.tight_layout(pad=0.4)
     fig.savefig(out)
     plt.close(fig)
@@ -391,6 +448,22 @@ def make_all(res_dir: str, fig_dir: str) -> None:
                     "coverage_grid", f"singleton_{cond}_{score}.png"
                 ),
                 lambda r, o, c=cond, s=score: _fig_singleton_single(
+                    r, o, c, s
+                ),
+            ))
+            jobs.append((
+                os.path.join(
+                    "coverage_grid_base", f"cov_{cond}_{score}.png"
+                ),
+                lambda r, o, c=cond, s=score: _fig_cov_base_only(
+                    r, o, c, s
+                ),
+            ))
+            jobs.append((
+                os.path.join(
+                    "coverage_grid_base", f"singleton_{cond}_{score}.png"
+                ),
+                lambda r, o, c=cond, s=score: _fig_singleton_base_only(
                     r, o, c, s
                 ),
             ))
