@@ -52,6 +52,34 @@ class Split:
         half = max(self.n_episodes // 2, 1)
         return self.ep_ptr[:half], self.ep_ptr[half:]
 
+    def select_episodes(self, ep_idx) -> "Split":
+        """Sub-Split over the given episode indices (into `ep_ptr`), reusing
+        the precomputed per-step arrays -- no re-softmax. Lets the
+        in-distribution and bootstrap analyses resample episodes cheaply."""
+        step_idx: List[int] = []
+        new_ptr: List[Tuple[int, int]] = []
+        cur = 0
+        for e in ep_idx:
+            a, b = self.ep_ptr[int(e)]
+            step_idx.extend(range(a, b))
+            new_ptr.append((cur, cur + (b - a)))
+            cur += b - a
+        si = np.asarray(step_idx, dtype=int)
+        return Split(
+            p_max=self.p_max[si],
+            p_teacher=self.p_teacher[si],
+            degree=self.degree[si],
+            argmax_err=self.argmax_err[si],
+            scan=self.scan[si],
+            base_teacher={k: v[si] for k, v in self.base_teacher.items()},
+            base_cands={
+                k: [self.base_cands[k][i] for i in si]
+                for k in self.base_cands
+            },
+            feat=self.feat[si],
+            ep_ptr=new_ptr,
+        )
+
     @classmethod
     def from_records(
         cls, records_by_episode: Dict[str, List[Dict[str, Any]]]

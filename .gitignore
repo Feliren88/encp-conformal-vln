@@ -7,3 +7,22 @@ paper/main.aux
 paper/main.bbl
 paper/main.blg
 paper/main.log
+# paper / thesis material -- local only, never published
+paper/
+paper_v5/
+paper_thesis/
+figures_html/
+
+# vendored / nested repos (own .git)
+mathcode/
+math-skills/
+tools/paperbanana_bridge/
+
+# agent + editor scratch
+docs/
+.superpowers/
+
+# build junk
+texput.log
+*.synctex*
+*.bak_caps

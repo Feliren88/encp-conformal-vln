@@ -201,7 +201,7 @@ def cmd_analyze(a: argparse.Namespace) -> None:
             f"{r['condition']:22s} pf THR a=0.10 "
             f"cov_step={pf['cov_step']:.3f} "
             f"cov_simul={pf['cov_simul']:.3f} |C|={pf['mean_set']:.2f} "
-            f"sat={pf['saturation']:.2f} dTV={r['shift']['dTV_score']:.3f}",
+            f"sat={pf['saturation']:.2f} dTV={r['shift']['dTV_reduced']:.3f}",
             flush=True,
         )
     with open(os.path.join(RES_DIR, "cp_results.json"), "w") as f:
@@ -313,7 +313,7 @@ def cmd_closedloop(a: argparse.Namespace) -> None:
     rows = []
     for trigger, param in policies:
         t0 = time.time()
-        preds, n_asks, n_steps = closedloop_duet_split(
+        preds, n_asks, n_steps, _cl = closedloop_duet_split(
             agent, test_env, args, q_hat, trigger, param
         )
         m = compute_nav_metrics(preds, test_env)
@@ -361,26 +361,13 @@ def cmd_indist(a: argparse.Namespace) -> None:
     targets = {"0.10": 0.90, "0.20": 0.80, "0.30": 0.70}
     rows = []
     for p in _dump_paths(a.dump_dir, a.condition):
-        nav = {k: [] for k in targets}
-        obj = {k: [] for k in targets}
-        cond = None
-        for sd in range(a.indist_seeds):
-            r = cp.evaluate_indist(p, seed=sd)
-            cond = r["condition"]
-            for k in targets:
-                nav[k].append(r["nav"][k]["THR"]["cov_step"])
-                if r["object"]:
-                    obj[k].append(r["object"][k]["THR"]["norm"]["cov"])
-        row = {
-            "condition": cond,
-            "nav": {k: float(np.mean(nav[k])) for k in targets},
-            "object": {k: float(np.mean(obj[k])) for k in targets if obj[k]},
-        }
+        row = cp.evaluate_indist(p, seeds=a.indist_seeds)
         rows.append(row)
         print(
-            f"[{cond}] "
+            f"[{row['condition']}] "
             + "  ".join(
-                f"a={k}: nav={row['nav'][k]:.3f}"
+                f"a={k}: step={row['nav'][k]:.3f} "
+                f"simul={row['nav_simul'][k]:.3f}"
                 + (
                     f" obj={row['object'][k]:.3f}"
                     if row["object"].get(k)

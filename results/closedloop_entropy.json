@@ -1,0 +1,55 @@
+{
+ "condition": "duet_full",
+ "cutoffs": {
+  "0.10": 1.346,
+  "0.20": 0.981,
+  "0.30": 0.7158,
+  "0.40": 0.5882
+ },
+ "policies": [
+  {
+   "arm": "entropy",
+   "trigger": "entropy",
+   "target_ask": 0.1,
+   "param": 1.346,
+   "ask_rate": 0.08136246013119094,
+   "n_asks": 1352,
+   "n_steps": 16617,
+   "sr": 81.05576841209026,
+   "spl": 66.6976980796632
+  },
+  {
+   "arm": "entropy",
+   "trigger": "entropy",
+   "target_ask": 0.2,
+   "param": 0.981,
+   "ask_rate": 0.1625046359253307,
+   "n_asks": 2629,
+   "n_steps": 16178,
+   "sr": 88.29289059174117,
+   "spl": 74.53612714582123
+  },
+  {
+   "arm": "entropy",
+   "trigger": "entropy",
+   "target_ask": 0.3,
+   "param": 0.7158,
+   "ask_rate": 0.2534350182780789,
+   "n_asks": 4021,
+   "n_steps": 15866,
+   "sr": 93.31630481055768,
+   "spl": 81.7501452086327
+  },
+  {
+   "arm": "entropy",
+   "trigger": "entropy",
+   "target_ask": 0.4,
+   "param": 0.5882,
+   "ask_rate": 0.34476276899144415,
+   "n_asks": 5319,
+   "n_steps": 15428,
+   "sr": 94.97658578118349,
+   "spl": 86.40306115408654
+  }
+ ]
+}

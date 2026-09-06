@@ -14,6 +14,8 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 
 import numpy as np
+
+from cp_core.scores import base_scores_all
 import torch
 
 from vln_backends.bootstrap import GraphMap
@@ -455,21 +457,33 @@ def closedloop_duet_split(
     q_hat: float,
     trigger: str = "none",
     param: float = 0.0,
-) -> Tuple[List[Dict[str, Any]], int, int]:
+    score: str = "THR",
+) -> Tuple[List[Dict[str, Any]], int, int, Dict[str, int]]:
     """Closed-loop DUET rollout (REVIEW.md #15): when the trigger fires, a
     simulated operator supplies the teacher action; otherwise argmax.
 
-    trigger 'set' : ask when |C_alpha(x_t)| > param (prediction-set trigger,
-                    THR score, threshold q_hat * (2 - p_max));
-    trigger 'pmax': ask when p_max < param (confidence baseline);
-    trigger 'none': plain argmax (the no-help baseline).
+    trigger 'set'      : ask when |C_alpha(x_t)| > param (ENCP prediction-set
+                         trigger, THR score, threshold q_hat * (2 - p_max));
+    trigger 'set_const': same trigger, constant threshold q_hat (no
+                         rescaling) -- the non-ENCP conformal control;
+    trigger 'pmax'     : ask when p_max < param (confidence baseline);
+    trigger 'entropy'  : ask when H(p_t) > param (entropy baseline);
+    trigger 'none'     : plain argmax (the no-help baseline).
 
-    Returns (preds, n_asks, n_steps). Asks where the teacher is undefined
-    (ignoreid) fall back to argmax and are not counted.
+    `score` selects the nonconformity score used to build the set for the two
+    set-based triggers: 'THR', 'APS' or 'RAPS'.
+
+    Returns (preds, n_asks, n_steps, stats). `stats` adds
+    `n_unsafe_episodes`, the number of episodes containing at least one step
+    where the agent acted without asking and its action differed from the
+    teacher action. Under the singleton trigger this is the event Theorem 1
+    bounds by alpha. Asks where the teacher is undefined (ignoreid) fall back
+    to argmax and are not counted.
     """
     agent.env = env
     env.reset_epoch(shuffle=False)
     traj_by_ep: Dict[str, Dict[str, Any]] = {}
+    unsafe_ep: set = set()
     n_asks = n_steps = 0
     n_done = 0
 
@@ -548,18 +562,35 @@ def closedloop_duet_split(
                 valid = np.isfinite(lg)
                 pv = p[valid]
                 pm = float(pv.max())
-                if trigger == "set":
-                    thr = q_hat * (2.0 - pm)
-                    set_size = max(int(np.sum((1.0 - pv) <= thr)), 1)
+                if trigger in ("set", "set_const"):
+                    # `set` applies the parameter-free rescaling, so membership
+                    # is s_base(a) <= q_hat * (2 - p_max); `set_const` uses a
+                    # plain constant threshold, which lets any non-ENCP
+                    # construction drive the identical trigger. Candidate
+                    # scores follow `score`, matching cp_core.scores.
+                    cand = base_scores_all(pv)[score]
+                    thr = q_hat * (2.0 - pm) if trigger == "set" else q_hat
+                    set_size = max(int(np.sum(cand <= thr)), 1)
                     ask = set_size > param
                 elif trigger == "pmax":
                     ask = pm < param
+                elif trigger == "entropy":
+                    # Shannon entropy over the valid candidates, matching the
+                    # feature in cp_core.split.Split.from_records.
+                    ask = float(
+                        -np.sum(pv * np.log(np.clip(pv, 1e-12, 1.0)))
+                    ) > param
                 else:
                     ask = False
                 ta = int(teacher[i].item())
                 if ask and ta != args.ignoreid:
                     n_asks += 1
                     chosen[i] = ta
+                elif ta != args.ignoreid and int(chosen[i]) != ta:
+                    # Acted alone and disagreed with the teacher. This is the
+                    # event the safety framing bounds: an episode is unsafe if
+                    # it contains at least one such step.
+                    unsafe_ep.add(obs[i]["instr_id"])
             cpu_a = []
             for i in range(bs):
                 stop = (
@@ -584,7 +615,13 @@ def closedloop_duet_split(
     preds = [
         {"instr_id": k, "trajectory": v["path"]} for k, v in traj_by_ep.items()
     ]
-    return preds, n_asks, n_steps
+    stats = {
+        "n_asks": n_asks,
+        "n_steps": n_steps,
+        "n_episodes": len(traj_by_ep),
+        "n_unsafe_episodes": len(unsafe_ep & set(traj_by_ep)),
+    }
+    return preds, n_asks, n_steps, stats
 
 
 ROLLOUTS = {

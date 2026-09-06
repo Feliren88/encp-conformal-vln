@@ -94,22 +94,38 @@ def evaluate_condition(
     return out
 
 
+def _epmax_reduced(split: Split, score: str = "THR") -> np.ndarray:
+    """Per-episode reduced score s~ = max_t s_base/(2 - p_max): the
+    parameter-free episode maximum that the guarantee compares against q_hat.
+    Bounded in [0, 1] for THR (1 - p_teacher in [0, 1], 2 - p_max in [1, 2])."""
+    s = split.base_teacher[score] / (2.0 - split.p_max)
+    return np.clip(
+        [s[a:b].max() for a, b in split.ep_ptr if b > a], 0.0, 1.0
+    )
+
+
 def dtv_plugin(cal: Split, test: Split, bins: int = 50) -> Dict[str, float]:
     """Plug-in total variation between calibration and test.
 
-    Score piece: histogram of the THR teacher score (1 - p_teacher) on [0,1].
-    Degree piece: histogram of |A_t| (attribution lower bound).
+    Reduced-score piece (dTV_reduced): total variation between the calibration
+    and test laws of the per-episode reduced score s~ = phi(E), the pf episode
+    maximum (see _epmax_reduced). This is exactly the delta of the
+    coverage-under-shift bound: s~ is the object the guarantee compares against
+    q_hat, so 1 - alpha - dTV_reduced is the estimated simultaneous-coverage
+    floor -- not merely a lower bound on the joint shift.
+    Degree piece (dTV_degree): total variation between the |A_t| histograms, a
+    marginal that attributes shift to branching factor rather than appearance.
     """
-    edges = np.linspace(0, 1, bins + 1)
-    pc, _ = np.histogram(1.0 - cal.p_teacher, bins=edges)
-    qt, _ = np.histogram(1.0 - test.p_teacher, bins=edges)
+    edges = np.linspace(0.0, 1.0, bins + 1)
+    pc, _ = np.histogram(_epmax_reduced(cal), bins=edges)
+    qt, _ = np.histogram(_epmax_reduced(test), bins=edges)
     pc = pc / max(pc.sum(), 1)
     qt = qt / max(qt.sum(), 1)
     m = int(max(cal.degree.max(), test.degree.max())) + 1
     hc = np.bincount(cal.degree, minlength=m) / max(len(cal), 1)
     ht = np.bincount(test.degree, minlength=m) / max(len(test), 1)
     return {
-        "dTV_score": float(0.5 * np.abs(pc - qt).sum()),
+        "dTV_reduced": float(0.5 * np.abs(pc - qt).sum()),
         "dTV_degree": float(0.5 * np.abs(hc - ht).sum()),
     }
 
@@ -118,7 +134,7 @@ def dtv_sensitivity(
     cal: Split, test: Split, bin_grid=(20, 40, 50, 80, 100)
 ) -> Dict[str, float]:
     return {
-        str(b): dtv_plugin(cal, test, bins=b)["dTV_score"] for b in bin_grid
+        str(b): dtv_plugin(cal, test, bins=b)["dTV_reduced"] for b in bin_grid
     }
 
 
@@ -267,46 +283,61 @@ def threshold_transfer(
 # ---- in-distribution check
 # ---------------------------------------------------
 def evaluate_indist(
-    dump_path: str, seed: int = 0, alphas=ALPHAS
+    dump_path: str, seeds: int = 20, alphas=ALPHAS
 ) -> Dict[str, Any]:
-    """Calibrate and test on exchangeable val_unseen halves. Isolates the
-    seen->unseen shift as the only cause of undercoverage."""
+    """Calibrate and test on exchangeable val_unseen halves, averaged over
+    `seeds` random halvings. Isolates the seen->unseen shift as the only cause
+    of undercoverage, and validates Theorem 1 in the setting where its
+    exchangeability premise actually holds.
+
+    Reports, per alpha (parameter-free THR), both coverages:
+      nav        step-averaged coverage (the weaker consequence, Corollary);
+      nav_simul  whole-trajectory coverage (the theorem's own quantity, which
+                 under exchangeability sits at k/(n+1) ~ 1-alpha).
+    The full test Split is built once and episodes are resampled by slicing,
+    so all `seeds` share it.
+    """
     d = torch.load(dump_path, weights_only=True)
-
-    def shuffled_halves(
-        mapping: Dict[str, Any], salt: int
-    ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-        ids = sorted(mapping.keys())
-        np.random.RandomState(seed + salt).shuffle(ids)
-        half = len(ids) // 2
-        return (
-            {k: mapping[k] for k in ids[:half]},
-            {k: mapping[k] for k in ids[half:]},
-        )
-
-    cal_recs, test_recs = shuffled_halves(d["test"], 0)
-    cal, tst = Split.from_records(cal_recs), Split.from_records(test_recs)
-    out: Dict[str, Any] = {
-        "condition": d["condition"],
-        "nav": {},
-        "object": None,
-    }
-    for alpha in alphas:
-        out["nav"][f"{alpha:.2f}"] = {
-            score: evaluate(
-                tst,
-                epmax_quantile(
-                    cal, WEIGHT_FAMILY["pf"](cal, alpha, {}), score, alpha
-                ),
-                WEIGHT_FAMILY["pf"](tst, alpha, {}),
-                score,
+    full = Split.from_records(d["test"])          # build ONCE
+    nep = full.n_episodes
+    akeys = [f"{a:.2f}" for a in alphas]
+    step = {a: [] for a in akeys}
+    simul = {a: [] for a in akeys}
+    obj = {a: [] for a in akeys}
+    has_obj = bool(d.get("test_obj"))
+    obj_ids = sorted(d["test_obj"].keys()) if has_obj else []
+    for s in range(seeds):
+        perm = np.random.RandomState(s).permutation(nep)
+        h = nep // 2
+        cal = full.select_episodes(perm[:h])
+        tst = full.select_episodes(perm[h:])
+        for a in alphas:
+            ak = f"{a:.2f}"
+            q = epmax_quantile(
+                cal, WEIGHT_FAMILY["pf"](cal, a, {}), "THR", a
             )
-            for score in SCORES
-        }
-    if d.get("test_obj"):
-        cal_obj, test_obj = shuffled_halves(d["test_obj"], 1)
-        out["object"] = evaluate_object_head(cal_obj, test_obj, alphas)
-    return out
+            m = evaluate(tst, q, WEIGHT_FAMILY["pf"](tst, a, {}), "THR")
+            step[ak].append(m["cov_step"])
+            simul[ak].append(m["cov_simul"])
+        if has_obj:
+            ids = list(obj_ids)
+            np.random.RandomState(s + 10007).shuffle(ids)
+            ho = len(ids) // 2
+            oh = evaluate_object_head(
+                {k: d["test_obj"][k] for k in ids[:ho]},
+                {k: d["test_obj"][k] for k in ids[ho:]},
+                alphas,
+            )
+            for ak in akeys:
+                obj[ak].append(oh[ak]["THR"]["norm"]["cov"])
+    return {
+        "condition": d["condition"],
+        "nav": {a: float(np.mean(step[a])) for a in akeys},
+        "nav_simul": {a: float(np.mean(simul[a])) for a in akeys},
+        "object": (
+            {a: float(np.mean(obj[a])) for a in akeys} if has_obj else {}
+        ),
+    }
 
 
 # ---- dense alpha sweep (the paper's "135 cells" claim)

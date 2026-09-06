@@ -1,0 +1,116 @@
+{
+ "0.10": {
+  "encp_pf": {
+   "trigger": "set",
+   "q": 0.9886935967679575,
+   "param": 1.0,
+   "cal_ask": 0.6260780587633387
+  },
+  "encp_w0": {
+   "trigger": "set_const",
+   "q": 0.9995524883270264,
+   "param": 1.0,
+   "cal_ask": 0.7719631632802222
+  },
+  "pooled": {
+   "trigger": "set_const",
+   "q": 0.9818315505981445,
+   "param": 1.0,
+   "cal_ask": 0.5168834965648297
+  },
+  "pmax": {
+   "trigger": "pmax",
+   "q": 0.0,
+   "param": 0.993127701610453,
+   "cal_ask": 0.6260780587633387
+  },
+  "entropy": {
+   "trigger": "entropy",
+   "q": 0.0,
+   "param": 0.046353653886873784,
+   "cal_ask": 0.6260780587633387
+  },
+  "pmax_naive": {
+   "trigger": "pmax",
+   "q": 0.0,
+   "param": 0.9,
+   "cal_ask": 0.38546996053208593
+  }
+ },
+ "0.20": {
+  "encp_pf": {
+   "trigger": "set",
+   "q": 0.9537748492761636,
+   "param": 1.0,
+   "cal_ask": 0.5105978658090923
+  },
+  "encp_w0": {
+   "trigger": "set_const",
+   "q": 0.9954332113265991,
+   "param": 1.0,
+   "cal_ask": 0.6268089460605175
+  },
+  "pooled": {
+   "trigger": "set_const",
+   "q": 0.8483564853668213,
+   "param": 1.0,
+   "cal_ask": 0.2800760122789066
+  },
+  "pmax": {
+   "trigger": "pmax",
+   "q": 0.0,
+   "param": 0.9721359396569824,
+   "cal_ask": 0.5105978658090923
+  },
+  "entropy": {
+   "trigger": "entropy",
+   "q": 0.0,
+   "param": 0.14442140319432414,
+   "cal_ask": 0.5105978658090923
+  },
+  "pmax_naive": {
+   "trigger": "pmax",
+   "q": 0.0,
+   "param": 0.8,
+   "cal_ask": 0.29747112995176145
+  }
+ },
+ "0.30": {
+  "encp_pf": {
+   "trigger": "set",
+   "q": 0.8835757668880813,
+   "param": 1.0,
+   "cal_ask": 0.4206987282561029
+  },
+  "encp_w0": {
+   "trigger": "set_const",
+   "q": 0.9852147698402405,
+   "param": 1.0,
+   "cal_ask": 0.5358865662914779
+  },
+  "pooled": {
+   "trigger": "set_const",
+   "q": 0.5310459136962891,
+   "param": 1.0,
+   "cal_ask": 0.00643180821517322
+  },
+  "pmax": {
+   "trigger": "pmax",
+   "q": 0.0,
+   "param": 0.9288761028593838,
+   "cal_ask": 0.4206987282561029
+  },
+  "entropy": {
+   "trigger": "entropy",
+   "q": 0.0,
+   "param": 0.3038792216390952,
+   "cal_ask": 0.4206987282561029
+  },
+  "pmax_naive": {
+   "trigger": "pmax",
+   "q": 0.0,
+   "param": 0.7,
+   "cal_ask": 0.22745212688203478
+  }
+ }
+}

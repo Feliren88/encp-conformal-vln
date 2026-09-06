@@ -192,6 +192,57 @@ def run_tests() -> int:
         "object" not in dense,
     )
 
+    # ---- Monte-Carlo validation of the finite-sample coverage guarantee ----
+    # Theorem 1 predicts that, on exchangeable episodes, the marginal
+    # whole-trajectory coverage equals k/(n+1) >= 1-alpha. We confirm this by
+    # simulation, which is the empirical counterpart of the proof (and of the
+    # in-distribution `indist` check on real data).
+
+    # (a) Pure quantile lemma: n_cal+1 i.i.d. (hence exchangeable) episode
+    # scores; q_hat is the k-th smallest of the first n_cal; the held-out score
+    # is covered iff it falls at or below q_hat. Vectorised over many trials.
+    rmc = np.random.RandomState(7)
+    n_cal, n_trials, alpha = 200, 4000, 0.10
+    k = int(np.ceil((n_cal + 1) * (1 - alpha)))
+    pred = k / (n_cal + 1)
+    Z = rmc.rand(n_trials, n_cal + 1)
+    qhat = np.sort(Z[:, :n_cal], axis=1)[:, k - 1]
+    emp = float((Z[:, n_cal] <= qhat).mean())
+    check(
+        f"MC quantile coverage {emp:.3f} >= 1-alpha ({1 - alpha:.2f})",
+        emp >= (1 - alpha) - 0.02,
+    )
+    check(
+        f"MC quantile coverage {emp:.3f} ~ k/(n+1) ({pred:.3f})",
+        abs(emp - pred) <= 0.02,
+    )
+
+    # (b) End-to-end pipeline: a pool of exchangeable synthetic episodes;
+    # repeatedly split into calibration/test and measure the SIMULTANEOUS
+    # coverage of the parameter-free episode-max method. Exercises the reduced
+    # score, the episode-maximum reduction, the corrected quantile, and the
+    # coverage test together -- the same computations as the real pipeline.
+    pool = Split.from_records(synthetic_records(n_ep=400, n_step=5, n_cand=6))
+    s_pool = pool.base_teacher["THR"] / (2.0 - pool.p_max)
+    ptr = pool.ep_ptr
+    smax = np.array([s_pool[a:b].max() for a, b in ptr])
+    nep, ncal = len(ptr), 200
+    kk = int(np.ceil((ncal + 1) * (1 - alpha)))
+    rp = np.random.RandomState(3)
+    cov_sim = []
+    for _ in range(80):
+        perm = rp.permutation(nep)
+        cal_e, test_e = perm[:ncal], perm[ncal:]
+        q = float(np.sort(smax[cal_e])[kk - 1]) if kk <= ncal else np.inf
+        for e in test_e:
+            a, b = ptr[e]
+            cov_sim.append(bool((s_pool[a:b] <= q).all()))
+    emp2 = float(np.mean(cov_sim))
+    check(
+        f"MC pipeline simul coverage {emp2:.3f} >= 1-alpha ({1 - alpha:.2f})",
+        emp2 >= (1 - alpha) - 0.03,
+    )
+
     print(f"\n[test] {'ALL PASS' if fails == 0 else f'{fails} FAILURES'}")
     return fails
 

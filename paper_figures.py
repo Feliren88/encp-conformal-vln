@@ -18,9 +18,13 @@ from typing import Any, Dict, List
 import matplotlib
 import numpy as np
 
-matplotlib.use("Agg")
+matplotlib.use(os.environ.get("PAPERFIG_BACKEND", "Agg"))
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
+
+# Under the PGF backend labels are typeset by LaTeX, where a bare % opens a
+# comment; the raster backends take the character literally.
+_PCT = r"\%" if matplotlib.get_backend().lower() == "pgf" else "%"
 
 BLUE, AQUA, RED = "#2a78d6", "#1baf7a", "#e34948"
 INK, MUTED, GRID = "#0b0b0b", "#52514e", "#d9d8d3"
@@ -84,20 +88,28 @@ def _despine(ax) -> None:
 
 
 def fig_closedloop(res_dir: str, out: str) -> None:
-    """SR vs operator ask-rate: prediction-set trigger vs confidence trigger.
-    The safety narrative figure: at a matched ask budget, which signal buys
-    more success?"""
+    """Simulated success versus ENCP set-size-trigger ask rate."""
     d = _load(res_dir, "closedloop.json")
     rows = d["policies"]
     base = next(r for r in rows if r["trigger"] == "none")
     sets = sorted(
         (r for r in rows if r["trigger"] == "set"), key=lambda r: r["ask_rate"]
     )
-    pmax = sorted(
-        (r for r in rows if r["trigger"] == "pmax"),
-        key=lambda r: r["ask_rate"],
+    fig, ax = plt.subplots(figsize=(2.55, 2.20), facecolor="white")
+    ax.set_facecolor("white")
+    ax.text(
+        0.02,
+        0.96,
+        "SIMULATED ORACLE",
+        transform=ax.transAxes,
+        ha="left",
+        va="top",
+        fontsize=6.2,
+        fontweight="bold",
+        color=INK,
+        bbox={"facecolor": "white", "edgecolor": "none", "pad": 1.0},
+        zorder=10,
     )
-    fig, ax = plt.subplots(figsize=(2.45, 1.75))
     ax.axhline(base["sr"], color=MUTED, lw=0.9, ls=(0, (4, 3)))
     ax.annotate(
         f"no help ({base['sr']:.1f})",
@@ -115,17 +127,7 @@ def fig_closedloop(res_dir: str, out: str) -> None:
         marker="o",
         ms=3.4,
         lw=1.4,
-        label=r"set trigger $|C_\alpha(x_t)|>\tau$",
-    )
-    ax.plot(
-        [r["ask_rate"] for r in pmax],
-        [r["sr"] for r in pmax],
-        color=AQUA,
-        marker="s",
-        ms=3.2,
-        lw=1.4,
-        ls="--",
-        label=r"confidence trigger $p_{\max}<c$",
+        label=r"ENCP set-size trigger $|\bar C_\alpha(x_t)|>\tau$",
     )
     for r in sets:
         if int(r["param"]) in (1, 4, 8, 12, 15):
@@ -137,21 +139,23 @@ def fig_closedloop(res_dir: str, out: str) -> None:
                 fontsize=5.8,
                 color=BLUE,
             )
-    ax.set_xlabel("operator ask rate (fraction of steps)")
-    ax.set_ylabel("success rate (%)")
+    ax.set_xlabel("Operator ask rate (fraction of steps)")
+    ax.set_ylabel(f"Success rate ({_PCT})")
     ax.set_xlim(left=-0.01)
     _despine(ax)
     fig.legend(
         loc="lower left",
-        bbox_to_anchor=(0.13, 0.86),
+        bbox_to_anchor=(0.13, 0.84),
         ncol=1,
         handlelength=1.6,
         borderaxespad=0.0,
         labelspacing=0.2,
         frameon=False,
     )
-    fig.tight_layout(pad=0.4, rect=[0, 0, 1, 0.85])
-    fig.savefig(out)
+    # Extra top and bottom room prevents the legend and axis label from being
+    # clipped when the PGF fragment is included in a one-column float.
+    fig.tight_layout(pad=0.65, rect=[0, 0.04, 1, 0.80])
+    fig.savefig(out, facecolor="white", bbox_inches="tight", pad_inches=0.08)
     plt.close(fig)
 
 
@@ -587,7 +591,7 @@ def fig_app_dense_cov(res_dir: str, out: str) -> None:
         ax.plot(al, [dense[c]["zeroshot"][a]["THR"]["cov_step"] for a in keys],
                 color=col, marker=mk, ms=3.0, lw=1.2, ls=ls, label=FLABEL[c])
     ax.set_xlabel(r"$\alpha$")
-    ax.set_ylabel("step coverage")
+    ax.set_ylabel("Step coverage")
     ax.set_ylim(0.72, 1.005)
     _despine(ax)
     _legend_right(ax)
@@ -606,7 +610,7 @@ def fig_app_dense_size(res_dir: str, out: str) -> None:
         ax.plot(al, [dense[c]["zeroshot"][a]["THR"]["mean_set"] for a in keys],
                 color=col, marker=mk, ms=3.0, lw=1.2, ls=ls, label=FLABEL[c])
     ax.set_xlabel(r"$\alpha$")
-    ax.set_ylabel(r"mean set size $\overline{|C|}$")
+    ax.set_ylabel(r"Mean set size $\overline{|C|}$")
     _despine(ax)
     _legend_right(ax)
     _save(fig, out)
@@ -624,7 +628,7 @@ def fig_app_collapse(res_dir: str, out: str) -> None:
         ax.plot(al, [dense[c]["base"][a]["APS"]["singleton"] for a in keys],
                 color=col, marker=mk, ms=3.0, lw=1.2, ls=ls, label=FLABEL[c])
     ax.set_xlabel(r"$\alpha$")
-    ax.set_ylabel("base-CP singleton rate (APS)")
+    ax.set_ylabel("Base-CP singleton rate (APS)")
     ax.set_ylim(-0.02, 1.03)
     _despine(ax)
     _legend_right(ax)
@@ -643,12 +647,12 @@ def fig_app_indist_simul(res_dir: str, out: str) -> None:
     x = np.arange(len(ORDER))
     w = 0.38
     fig, ax = plt.subplots(figsize=(3.5, 2.2))
-    ax.bar(x - w / 2, shifted, w, color=RED, label="shifted (seen$\\to$unseen)")
-    ax.bar(x + w / 2, indist, w, color=BLUE, label="in-distribution")
+    ax.bar(x - w / 2, shifted, w, color=RED, label="Shifted (seen$\\to$unseen)")
+    ax.bar(x + w / 2, indist, w, color=BLUE, label="In-distribution")
     ax.axhline(0.90, color=INK, lw=1.1, ls="--", label=r"Target $1{-}\alpha$")
     ax.set_xticks(x)
     ax.set_xticklabels([FLABEL[c] for c in ORDER], rotation=40, ha="right")
-    ax.set_ylabel(r"simultaneous coverage ($\alpha{=}0.10$)")
+    ax.set_ylabel(r"Simultaneous coverage ($\alpha{=}0.10$)")
     ax.set_ylim(0.6, 1.0)
     _despine(ax)
     _legend_top(ax, ncol=3)
@@ -666,12 +670,12 @@ def fig_app_gap(res_dir: str, out: str) -> None:
     x = np.arange(len(ORDER))
     w = 0.38
     fig, ax = plt.subplots(figsize=(3.5, 2.2))
-    ax.bar(x - w / 2, step, w, color=BLUE, label="step-averaged")
-    ax.bar(x + w / 2, simul, w, color=AQUA, label="simultaneous")
+    ax.bar(x - w / 2, step, w, color=BLUE, label="Step-averaged")
+    ax.bar(x + w / 2, simul, w, color=AQUA, label="Simultaneous")
     ax.axhline(0.90, color=INK, lw=1.1, ls="--", label=r"Target $1{-}\alpha$")
     ax.set_xticks(x)
     ax.set_xticklabels([FLABEL[c] for c in ORDER], rotation=40, ha="right")
-    ax.set_ylabel(r"coverage ($\alpha{=}0.10$)")
+    ax.set_ylabel(r"Coverage ($\alpha{=}0.10$)")
     ax.set_ylim(0.6, 1.0)
     _despine(ax)
     _legend_top(ax, ncol=3)
@@ -693,8 +697,8 @@ def fig_app_transfer(res_dir: str, out: str) -> None:
     ax.set_xticklabels(lab, rotation=40, ha="right")
     ax.set_yticks(range(len(order)))
     ax.set_yticklabels(lab)
-    ax.set_xlabel("applied to (test split)")
-    ax.set_ylabel(r"calibrated on ($\hat q$ source)")
+    ax.set_xlabel("Applied to (test split)")
+    ax.set_ylabel(r"Calibrated on ($\hat q$ source)")
     for i in range(len(order)):
         for j in range(len(order)):
             ax.text(j, i, f"{M[i, j]:.2f}", ha="center", va="center",
@@ -724,10 +728,10 @@ def fig_app_family(res_dir: str, out: str) -> None:
         ys = [cp[c]["0.10"]["family"]["THR"][m]["cov_step"] for c in ORDER]
         ax.bar(x + (i - (nmemb - 1) / 2) * w, ys, w,
                color=mcol[m], label=mlab[m])
-    ax.axhline(0.90, color=INK, lw=1.0, ls="--", label=r"target")
+    ax.axhline(0.90, color=INK, lw=1.0, ls="--", label=r"Target")
     ax.set_xticks(x)
     ax.set_xticklabels([FLABEL[c] for c in ORDER], rotation=40, ha="right")
-    ax.set_ylabel(r"step coverage ($\alpha{=}0.10$)")
+    ax.set_ylabel(r"Step coverage ($\alpha{=}0.10$)")
     ax.set_ylim(0.9, 1.0)
     _despine(ax)
     _legend_top(ax, ncol=6)
@@ -747,8 +751,8 @@ def fig_app_dtv(res_dir: str, out: str) -> None:
         ax.scatter(d, short, s=42, color=col, marker=mk,
                    edgecolor="white", linewidth=0.4, label=FLABEL[c])
     ax.axhline(0.0, color=MUTED, lw=0.8, ls=":")
-    ax.set_xlabel(r"reduced-score shift $\widehat{d}_{\mathrm{TV}}$")
-    ax.set_ylabel(r"simul. shortfall $(1{-}\alpha){-}\mathrm{cov}$")
+    ax.set_xlabel(r"Reduced-score shift $\widehat{d}_{\mathrm{TV}}$")
+    ax.set_ylabel(r"Simul. shortfall $(1{-}\alpha){-}\mathrm{cov}$")
     _despine(ax)
     _legend_right(ax)
     _save(fig, out)
@@ -770,7 +774,7 @@ def fig_app_conditional(res_dir: str, out: str) -> None:
     ax.set_xticks(q)
     ax.set_xticklabels([r"Q1", r"Q2", r"Q3", r"Q4"])
     ax.set_xlabel(r"$p_{\max}$ quartile (least $\to$ most confident)")
-    ax.set_ylabel(r"step coverage ($\alpha{=}0.10$)")
+    ax.set_ylabel(r"Step coverage ($\alpha{=}0.10$)")
     _despine(ax)
     _legend_right(ax)
     _save(fig, out)
@@ -790,12 +794,12 @@ def fig_app_budget(res_dir: str, out: str) -> None:
                     for b in budgets] for c in ORDER], axis=0)
     fig, ax = plt.subplots(figsize=(3.3, 2.2))
     ax.plot(xs, setr, color=BLUE, marker="o", ms=3.4, lw=1.4,
-            label="set-size trigger")
+            label="Set-size trigger")
     ax.plot(xs, pmr, color=AQUA, marker="s", ms=3.2, lw=1.4, ls="--",
-            label=r"confidence trigger")
-    ax.plot([0, 0.3], [0, 0.3], color=MUTED, lw=0.8, ls=":", label="random")
-    ax.set_xlabel("fraction of steps queried")
-    ax.set_ylabel("recall of argmax errors")
+            label=r"Confidence trigger")
+    ax.plot([0, 0.3], [0, 0.3], color=MUTED, lw=0.8, ls=":", label="Random")
+    ax.set_xlabel("Fraction of steps queried")
+    ax.set_ylabel("Recall of argmax errors")
     _despine(ax)
     _legend_right(ax)
     _save(fig, out)
@@ -821,7 +825,7 @@ def fig_app_object(res_dir: str, out: str) -> None:
                 marker=mk, ms=3.2, lw=1.1, ls=":",
                 label=f"{FLABEL[c]} norm.")
     ax.set_xlabel(r"$\alpha$")
-    ax.set_ylabel("object-head coverage")
+    ax.set_ylabel("Object-head coverage")
     ax.set_xticks(al)
     _despine(ax)
     _legend_right(ax)
@@ -842,13 +846,13 @@ def fig_app_mc(res_dir: str, out: str) -> None:
         covs[i] = (z[n_cal:] <= q).mean()
     fig, ax = plt.subplots(figsize=(3.3, 2.2))
     ax.hist(covs, bins=28, color=BLUE, alpha=0.8, edgecolor="white", lw=0.3,
-            label="per-trial coverage")
+            label="Per-trial coverage")
     ax.axvline(1 - alpha, color=RED, lw=1.4, ls="--",
                label=r"Target $1{-}\alpha$")
     ax.axvline(float(covs.mean()), color=INK, lw=1.4,
                label=f"mean {covs.mean():.3f}")
-    ax.set_xlabel("whole-trajectory coverage per trial")
-    ax.set_ylabel("trials")
+    ax.set_xlabel("Whole-trajectory coverage per trial")
+    ax.set_ylabel("Trials")
     _despine(ax)
     _legend_right(ax)
     _save(fig, out)
@@ -871,16 +875,16 @@ def fig_app_collapse2(res_dir: str, out: str) -> None:
     bins = np.linspace(0, 1, 26)
     fig, (axA, axB) = plt.subplots(1, 2, figsize=(5.4, 2.0))
     axA.hist(aps, bins=bins, color=RED, alpha=0.85, edgecolor="white", lw=0.3)
-    axA.set_title(r"base APS score", fontsize=8.5)
-    axA.set_xlabel("teacher nonconformity score")
-    axA.set_ylabel("steps")
+    axA.set_title(r"Base APS score", fontsize=8.5)
+    axA.set_xlabel("Teacher nonconformity score")
+    axA.set_ylabel("Steps")
     axA.annotate(f"{(aps < 1e-9).mean() * 100:.0f}% at $0$",
                  xy=(0.05, 0.86), xycoords="axes fraction", fontsize=8,
                  color=RED)
     axB.hist(snorm, bins=bins, color=BLUE, alpha=0.85, edgecolor="white",
              lw=0.3)
-    axB.set_title(r"normalised score $s_{\mathrm{norm}}$", fontsize=8.5)
-    axB.set_xlabel("teacher nonconformity score")
+    axB.set_title(r"Normalised score $s_{\mathrm{norm}}$", fontsize=8.5)
+    axB.set_xlabel("Teacher nonconformity score")
     for ax in (axA, axB):
         _despine(ax)
     fig.tight_layout(w_pad=1.4)
@@ -908,11 +912,11 @@ def fig_app_shift_hist(res_dir: str, out: str) -> None:
     bins = np.linspace(0, 1, 41)
     fig, ax = plt.subplots(figsize=(3.5, 2.15))
     ax.hist(rc, bins=bins, density=True, color=BLUE, alpha=0.55,
-            label="val-seen (calibration)")
+            label="Val-seen (calibration)")
     ax.hist(rt, bins=bins, density=True, color=RED, alpha=0.55,
-            label="val-unseen (test)")
-    ax.set_xlabel(r"reduced score $\tilde s=\varphi(E)$")
-    ax.set_ylabel("density")
+            label="Val-unseen (test)")
+    ax.set_xlabel(r"Reduced score $\tilde s=\varphi(E)$")
+    ax.set_ylabel("Density")
     ax.annotate(r"$\widehat{d}_{\mathrm{TV}}=0.225$", xy=(0.03, 0.86),
                 xycoords="axes fraction", fontsize=8)
     _despine(ax)
